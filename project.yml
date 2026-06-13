@@ -1,0 +1,33 @@
+name: RefineKeyboard
+options:
+  bundleIdPrefix: com.peyman
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  SWIFT_VERSION: "5.0"
+targets:
+  RefineKeyboard:
+    type: application
+    platform: iOS
+    sources:
+      - RefineKeyboardApp
+    info:
+      path: RefineKeyboardApp/Info.plist
+    entitlements:
+      path: RefineKeyboardApp/RefineKeyboard.entitlements
+    dependencies:
+      - target: RefineKeyboardExtension
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.peyman.RefineKeyboard
+  RefineKeyboardExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - RefineKeyboardExtension
+    info:
+      path: RefineKeyboardExtension/Info.plist
+    entitlements:
+      path: RefineKeyboardExtension/RefineKeyboardExtension.entitlements
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.peyman.RefineKeyboard.Keyboard
+      APPLICATION_EXTENSION_API_ONLY: YES
