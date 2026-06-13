@@ -81,11 +81,13 @@ or for local LAN testing:
 http://192.168.1.50:8000/refine
 ```
 
-For production, deploy the backend with `render.yaml`, add the custom domain `api.refinekeyboard.app`, and keep the iOS app pointed at:
+For the current deployed backend, keep the iOS app pointed at:
 
 ```text
-https://api.refinekeyboard.app/refine
+https://refinekeyboard-api.onrender.com/refine
 ```
+
+For production branding, add the custom domain `api.refinekeyboard.app` in Render, update DNS, then switch the iOS app endpoint to `https://api.refinekeyboard.app/refine`.
 
 ## Privacy note
 

@@ -3,7 +3,7 @@ import Foundation
 enum KeyboardSettings {
     static let appGroupID = "group.com.peyman.RefineKeyboard"
     static let endpointKey = "rewriteEndpoint"
-    static let productionEndpoint = "https://api.refinekeyboard.app/refine"
+    static let productionEndpoint = "https://refinekeyboard-api.onrender.com/refine"
 
     static var sharedDefaults: UserDefaults {
         UserDefaults(suiteName: appGroupID) ?? .standard
