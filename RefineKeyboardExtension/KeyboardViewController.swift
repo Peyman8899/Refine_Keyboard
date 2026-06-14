@@ -12,6 +12,7 @@ final class KeyboardViewController: UIInputViewController {
     private let statusLabel = UILabel()
     private var languageButton: UIButton?
     private let keyboardStack = UIStackView()
+    private var keyboardHeightConstraint: NSLayoutConstraint?
     private var letterButtons: [UIButton] = []
     private var isShifted = false
     private var keyboardMode: KeyboardMode = .letters
@@ -35,6 +36,9 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        keyboardHeightConstraint = view.heightAnchor.constraint(equalToConstant: 292)
+        keyboardHeightConstraint?.priority = .defaultHigh
+        keyboardHeightConstraint?.isActive = true
         setupKeyboard()
     }
 
@@ -86,7 +90,7 @@ final class KeyboardViewController: UIInputViewController {
         root.addArrangedSubview(modeRow)
 
         keyboardStack.axis = .vertical
-        keyboardStack.spacing = 7
+        keyboardStack.spacing = 6
         keyboardStack.translatesAutoresizingMaskIntoConstraints = false
         root.addArrangedSubview(keyboardStack)
         renderKeyboard()
@@ -126,8 +130,6 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func renderEmojiKeyboard() {
-        keyboardStack.addArrangedSubview(makeEmojiSearchView())
-
         [
             ["😂", "🐰", "🧐", "🔥", "🌎", "👫", "💃", "🏃"],
             ["😁", "🕺", "💕", "☄️", "👊", "💏", "😍", "👍"],
@@ -189,7 +191,7 @@ final class KeyboardViewController: UIInputViewController {
         globe.tintColor = .label
         globe.contentHorizontalAlignment = .left
         globe.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
-        globe.heightAnchor.constraint(equalToConstant: 42).isActive = true
+        globe.heightAnchor.constraint(equalToConstant: 34).isActive = true
         globe.widthAnchor.constraint(equalToConstant: 74).isActive = true
         row.addArrangedSubview(globe)
 
@@ -199,7 +201,7 @@ final class KeyboardViewController: UIInputViewController {
         mic.setImage(UIImage(systemName: "mic"), for: .normal)
         mic.tintColor = .label
         mic.contentHorizontalAlignment = .right
-        mic.heightAnchor.constraint(equalToConstant: 42).isActive = true
+        mic.heightAnchor.constraint(equalToConstant: 34).isActive = true
         mic.widthAnchor.constraint(equalToConstant: 74).isActive = true
         addTapAction(to: mic) { [weak self] in
             self?.showStatus("Dictation unavailable")
@@ -309,36 +311,6 @@ final class KeyboardViewController: UIInputViewController {
         return row
     }
 
-    private func makeEmojiSearchView() -> UIView {
-        let container = UIView()
-        container.backgroundColor = UIColor(red: 0.91, green: 0.92, blue: 0.95, alpha: 1)
-        container.layer.cornerRadius = 18
-        container.heightAnchor.constraint(equalToConstant: 38).isActive = true
-
-        let icon = UIImageView(image: UIImage(systemName: "magnifyingglass"))
-        icon.tintColor = .secondaryLabel
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(icon)
-
-        let label = UILabel()
-        label.text = "Search Emoji"
-        label.textColor = .secondaryLabel
-        label.font = .systemFont(ofSize: 20, weight: .regular)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(label)
-
-        NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
-            icon.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 20),
-            icon.heightAnchor.constraint(equalToConstant: 20),
-            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
-            label.centerYAnchor.constraint(equalTo: container.centerYAnchor)
-        ])
-
-        return container
-    }
-
     private func makeEmojiTabsRow() -> UIStackView {
         let row = makeRow()
         row.distribution = .fill
@@ -425,7 +397,7 @@ final class KeyboardViewController: UIInputViewController {
         button.titleLabel?.adjustsFontSizeToFitWidth = true
         button.titleLabel?.minimumScaleFactor = 0.5
         button.titleLabel?.lineBreakMode = .byTruncatingTail
-        button.heightAnchor.constraint(equalToConstant: 38).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 36).isActive = true
         addPressFeedback(to: button)
         return button
     }
@@ -440,15 +412,13 @@ final class KeyboardViewController: UIInputViewController {
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 2, bottom: 0, trailing: 2)
 
         let button = UIButton(configuration: configuration)
-        button.layer.shadowColor = UIColor.black.cgColor
-        button.layer.shadowOpacity = 0.16
-        button.layer.shadowRadius = 0
-        button.layer.shadowOffset = CGSize(width: 0, height: 1)
+        button.layer.borderColor = UIColor.black.withAlphaComponent(0.04).cgColor
+        button.layer.borderWidth = 0.5
         button.titleLabel?.numberOfLines = 1
         button.titleLabel?.adjustsFontSizeToFitWidth = true
         button.titleLabel?.minimumScaleFactor = 0.55
         button.titleLabel?.lineBreakMode = .byTruncatingTail
-        button.heightAnchor.constraint(equalToConstant: 50).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 44).isActive = true
         addPressFeedback(to: button)
         return button
     }
@@ -469,7 +439,7 @@ final class KeyboardViewController: UIInputViewController {
         button.titleLabel?.font = .systemFont(ofSize: 18, weight: .regular)
         button.titleLabel?.adjustsFontSizeToFitWidth = true
         button.titleLabel?.minimumScaleFactor = 0.7
-        button.heightAnchor.constraint(equalToConstant: 50).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 44).isActive = true
         addPressFeedback(to: button)
         return button
     }
@@ -478,7 +448,7 @@ final class KeyboardViewController: UIInputViewController {
         let button = UIButton(type: .system)
         button.setTitle(title, for: .normal)
         button.titleLabel?.font = .systemFont(ofSize: 28, weight: .regular)
-        button.heightAnchor.constraint(equalToConstant: 42).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 36).isActive = true
         return button
     }
 
