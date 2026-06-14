@@ -89,9 +89,6 @@ final class KeyboardViewController: UIInputViewController {
 
         let stickers = makeStickerButton()
         stickers.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        addTapAction(to: stickers) { [weak self] in
-            self?.showStatus("Stickers")
-        }
         commandRow.addArrangedSubview(stickers)
 
         let space = makeKeyButton(title: "space")
@@ -250,7 +247,7 @@ final class KeyboardViewController: UIInputViewController {
 
     private func makeStickerButton() -> UIButton {
         var configuration = UIButton.Configuration.filled()
-        configuration.image = stickerIcon()
+        configuration.image = UIImage(systemName: "face.smiling")
         configuration.baseBackgroundColor = UIColor(red: 0.68, green: 0.71, blue: 0.76, alpha: 1)
         configuration.baseForegroundColor = .label
         configuration.cornerStyle = .small
@@ -261,37 +258,9 @@ final class KeyboardViewController: UIInputViewController {
         return button
     }
 
-    private func stickerIcon() -> UIImage {
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 30, height: 28))
-        return renderer.image { context in
-            UIColor.label.setStroke()
-            UIColor.clear.setFill()
-
-            let back = UIBezierPath(roundedRect: CGRect(x: 5, y: 3, width: 17, height: 17), cornerRadius: 4)
-            back.lineWidth = 2.4
-            back.stroke()
-
-            let front = UIBezierPath(roundedRect: CGRect(x: 10, y: 8, width: 17, height: 17), cornerRadius: 4)
-            front.lineWidth = 2.4
-            front.stroke()
-
-            let fold = UIBezierPath()
-            fold.move(to: CGPoint(x: 20, y: 25))
-            fold.addLine(to: CGPoint(x: 27, y: 18))
-            fold.addLine(to: CGPoint(x: 27, y: 25))
-            fold.close()
-            fold.lineWidth = 2.2
-            fold.stroke()
-            context.cgContext.setFillColor(UIColor.label.cgColor)
-            context.cgContext.fillEllipse(in: CGRect(x: 14, y: 13, width: 2.8, height: 2.8))
-            context.cgContext.fillEllipse(in: CGRect(x: 20, y: 13, width: 2.8, height: 2.8))
-        }.withRenderingMode(.alwaysOriginal)
-    }
-
     private func addTapAction(to button: UIButton, action: @escaping () -> Void) {
         let handler = UIAction { _ in action() }
         button.addAction(handler, for: .touchUpInside)
-        button.addAction(UIAction { _ in action() }, for: .touchUpOutside)
     }
 
     private func languageTitle() -> String {
