@@ -2,9 +2,22 @@ import UIKit
 
 final class KeyboardViewController: UIInputViewController {
     private let client = RewriteClient()
-    private var selectedMode: RewriteMode = .polish
-    private var modeButtons: [RewriteMode: UIButton] = [:]
+    private var outputLanguage = KeyboardSettings.rewriteLanguage
     private let statusLabel = UILabel()
+
+    private let languages = [
+        "Auto", "English", "Spanish", "French", "German", "Italian", "Portuguese", "Dutch",
+        "Swedish", "Norwegian", "Danish", "Finnish", "Icelandic", "Irish", "Welsh",
+        "Polish", "Czech", "Slovak", "Hungarian", "Romanian", "Bulgarian", "Croatian",
+        "Serbian", "Slovenian", "Greek", "Turkish", "Russian", "Ukrainian", "Hebrew",
+        "Arabic", "Persian", "Urdu", "Hindi", "Bengali", "Punjabi", "Gujarati",
+        "Tamil", "Telugu", "Malayalam", "Kannada", "Marathi", "Nepali", "Sinhala",
+        "Chinese Simplified", "Chinese Traditional", "Japanese", "Korean", "Vietnamese",
+        "Thai", "Indonesian", "Malay", "Filipino", "Swahili", "Amharic", "Yoruba",
+        "Igbo", "Hausa", "Zulu", "Afrikaans", "Albanian", "Armenian", "Azerbaijani",
+        "Basque", "Catalan", "Estonian", "Georgian", "Kazakh", "Latvian", "Lithuanian",
+        "Macedonian", "Mongolian", "Pashto", "Somali", "Tagalog"
+    ]
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -41,25 +54,15 @@ final class KeyboardViewController: UIInputViewController {
             let button = makeButton(title: mode.rawValue)
             button.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
             button.addAction(UIAction { [weak self] _ in
-                self?.selectedMode = mode
-                self?.refreshModeButtons()
-                self?.statusLabel.text = "\(mode.rawValue) selected"
+                self?.refineCurrentText(mode: mode)
             }, for: .touchUpInside)
-            modeButtons[mode] = button
+            if mode == .polish {
+                button.menu = makeLanguageMenu()
+                button.showsMenuAsPrimaryAction = false
+            }
             modeRow.addArrangedSubview(button)
         }
         root.addArrangedSubview(modeRow)
-        refreshModeButtons()
-
-        let refineButton = makeButton(title: "Refine")
-        refineButton.backgroundColor = .systemBlue
-        refineButton.setTitleColor(.white, for: .normal)
-        refineButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .bold)
-        refineButton.heightAnchor.constraint(equalToConstant: 44).isActive = true
-        refineButton.addAction(UIAction { [weak self] _ in
-            self?.refineCurrentText()
-        }, for: .touchUpInside)
-        root.addArrangedSubview(refineButton)
 
         ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"].forEach { rowText in
             let row = UIStackView()
@@ -121,14 +124,19 @@ final class KeyboardViewController: UIInputViewController {
         return button
     }
 
-    private func refreshModeButtons() {
-        for (mode, button) in modeButtons {
-            button.backgroundColor = mode == selectedMode ? .systemBlue : .secondarySystemBackground
-            button.setTitleColor(mode == selectedMode ? .white : .label, for: .normal)
+    private func makeLanguageMenu() -> UIMenu {
+        let actions = languages.map { language in
+            UIAction(title: language, state: language == outputLanguage ? .on : .off) { [weak self] _ in
+                guard let self else { return }
+                self.outputLanguage = language
+                KeyboardSettings.sharedDefaults.set(language, forKey: KeyboardSettings.languageKey)
+                self.statusLabel.text = "Language: \(language)"
+            }
         }
+        return UIMenu(title: "Output Language", children: actions)
     }
 
-    private func refineCurrentText() {
+    private func refineCurrentText(mode: RewriteMode) {
         let text = (textDocumentProxy.documentContextBeforeInput ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -142,7 +150,7 @@ final class KeyboardViewController: UIInputViewController {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let refined = try await client.rewrite(text: text, mode: selectedMode)
+                let refined = try await client.rewrite(text: text, mode: mode, language: outputLanguage)
                 await MainActor.run {
                     if refined == text {
                         self.statusLabel.text = "No changes suggested"

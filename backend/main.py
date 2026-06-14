@@ -15,6 +15,7 @@ request_log: dict[str, deque[float]] = defaultdict(deque)
 class RefineRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
     mode: Literal["Polish", "Warm", "Professional", "Shorter"] = "Polish"
+    language: str = Field(default="Auto", max_length=80)
 
 
 class RefineResponse(BaseModel):
@@ -76,7 +77,17 @@ def refine(payload: RefineRequest, request: Request) -> RefineResponse:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured")
 
     client = OpenAI(api_key=api_key)
-    prompt = f"Mode: {payload.mode}\nInstruction: {MODE_INSTRUCTIONS[payload.mode]}\n\nMessage:\n{payload.text}"
+    language_instruction = (
+        "Keep the output in the same language as the input."
+        if payload.language == "Auto"
+        else f"Write the output in {payload.language}."
+    )
+    prompt = (
+        f"Mode: {payload.mode}\n"
+        f"Instruction: {MODE_INSTRUCTIONS[payload.mode]}\n"
+        f"Language: {language_instruction}\n\n"
+        f"Message:\n{payload.text}"
+    )
 
     response = client.responses.create(
         model=os.getenv("OPENAI_MODEL", "gpt-5.4-nano"),

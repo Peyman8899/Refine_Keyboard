@@ -10,6 +10,7 @@ enum RewriteMode: String, CaseIterable {
 struct RewriteRequest: Encodable {
     let text: String
     let mode: String
+    let language: String
 }
 
 struct RewriteResponse: Decodable {
@@ -28,7 +29,7 @@ enum RewriteClientError: LocalizedError {
 }
 
 final class RewriteClient {
-    func rewrite(text: String, mode: RewriteMode) async throws -> String {
+    func rewrite(text: String, mode: RewriteMode, language: String) async throws -> String {
         let endpoint = KeyboardSettings.rewriteEndpoint
         guard let url = URL(string: endpoint), !endpoint.isEmpty else {
             throw RewriteClientError.missingEndpoint
@@ -38,7 +39,7 @@ final class RewriteClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
-        request.httpBody = try JSONEncoder().encode(RewriteRequest(text: text, mode: mode.rawValue))
+        request.httpBody = try JSONEncoder().encode(RewriteRequest(text: text, mode: mode.rawValue, language: language))
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
