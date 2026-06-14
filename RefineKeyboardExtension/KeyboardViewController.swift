@@ -36,7 +36,7 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        keyboardHeightConstraint = view.heightAnchor.constraint(equalToConstant: 292)
+        keyboardHeightConstraint = view.heightAnchor.constraint(equalToConstant: 252)
         keyboardHeightConstraint?.priority = .defaultHigh
         keyboardHeightConstraint?.isActive = true
         setupKeyboard()
@@ -118,7 +118,6 @@ final class KeyboardViewController: UIInputViewController {
         keyboardStack.addArrangedSubview(makeIndentedLetterRow("asdfghjkl", sideInset: 20))
         keyboardStack.addArrangedSubview(makeThirdLetterRow())
         keyboardStack.addArrangedSubview(makeCommandRow(modeTitle: "123"))
-        keyboardStack.addArrangedSubview(makeUtilityRow())
     }
 
     private func renderNumberKeyboard() {
@@ -126,7 +125,6 @@ final class KeyboardViewController: UIInputViewController {
         keyboardStack.addArrangedSubview(makeTextRow(["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""]))
         keyboardStack.addArrangedSubview(makeSymbolRow())
         keyboardStack.addArrangedSubview(makeCommandRow(modeTitle: "ABC"))
-        keyboardStack.addArrangedSubview(makeUtilityRow())
     }
 
     private func renderEmojiKeyboard() {
@@ -137,7 +135,6 @@ final class KeyboardViewController: UIInputViewController {
         ].forEach { keyboardStack.addArrangedSubview(makeEmojiRow($0)) }
 
         keyboardStack.addArrangedSubview(makeEmojiTabsRow())
-        keyboardStack.addArrangedSubview(makeUtilityRow())
     }
 
     private func makeCommandRow(modeTitle: String) -> UIStackView {
@@ -178,37 +175,6 @@ final class KeyboardViewController: UIInputViewController {
         commandRow.addArrangedSubview(enter)
 
         return commandRow
-    }
-
-    private func makeUtilityRow() -> UIStackView {
-        let row = UIStackView()
-        row.axis = .horizontal
-        row.alignment = .center
-        row.distribution = .fill
-
-        let globe = UIButton(type: .system)
-        globe.setImage(UIImage(systemName: "globe"), for: .normal)
-        globe.tintColor = .label
-        globe.contentHorizontalAlignment = .left
-        globe.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
-        globe.heightAnchor.constraint(equalToConstant: 34).isActive = true
-        globe.widthAnchor.constraint(equalToConstant: 74).isActive = true
-        row.addArrangedSubview(globe)
-
-        row.addArrangedSubview(UIView())
-
-        let mic = UIButton(type: .system)
-        mic.setImage(UIImage(systemName: "mic"), for: .normal)
-        mic.tintColor = .label
-        mic.contentHorizontalAlignment = .right
-        mic.heightAnchor.constraint(equalToConstant: 34).isActive = true
-        mic.widthAnchor.constraint(equalToConstant: 74).isActive = true
-        addTapAction(to: mic) { [weak self] in
-            self?.showStatus("Dictation unavailable")
-        }
-        row.addArrangedSubview(mic)
-
-        return row
     }
 
     private func makeLetterRow(_ letters: String) -> UIStackView {
