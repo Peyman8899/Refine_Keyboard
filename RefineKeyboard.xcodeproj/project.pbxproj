@@ -344,10 +344,13 @@
 				CODE_SIGN_ENTITLEMENTS = RefineKeyboardApp/RefineKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 86F3YVYYHW;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RefineKeyboardApp/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.peyman.RefineKeyboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -363,10 +366,13 @@
 				CODE_SIGN_ENTITLEMENTS = RefineKeyboardApp/RefineKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 86F3YVYYHW;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RefineKeyboardApp/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.peyman.RefineKeyboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -382,10 +388,14 @@
 				CODE_SIGN_ENTITLEMENTS = RefineKeyboardExtension/RefineKeyboardExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 86F3YVYYHW;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RefineKeyboardExtension/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.peyman.RefineKeyboard.Keyboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -402,10 +412,14 @@
 				CODE_SIGN_ENTITLEMENTS = RefineKeyboardExtension/RefineKeyboardExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 86F3YVYYHW;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = RefineKeyboardExtension/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.peyman.RefineKeyboard.Keyboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";

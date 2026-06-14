@@ -83,8 +83,7 @@ def refine(payload: RefineRequest, request: Request) -> RefineResponse:
         else f"Write the output in {payload.language}."
     )
     prompt = (
-        f"Mode: {payload.mode}\n"
-        f"Instruction: {MODE_INSTRUCTIONS[payload.mode]}\n"
+        f"Rewrite task: {MODE_INSTRUCTIONS[payload.mode]}\n"
         f"Language: {language_instruction}\n\n"
         f"Message:\n{payload.text}"
     )

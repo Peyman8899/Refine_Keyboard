@@ -19,11 +19,17 @@ struct RewriteResponse: Decodable {
 
 enum RewriteClientError: LocalizedError {
     case missingEndpoint
+    case server(String)
+    case invalidResponse
 
     var errorDescription: String? {
         switch self {
         case .missingEndpoint:
             return "Service not configured"
+        case .server(let message):
+            return message
+        case .invalidResponse:
+            return "Service response was invalid"
         }
     }
 }
@@ -42,11 +48,45 @@ final class RewriteClient {
         request.httpBody = try JSONEncoder().encode(RewriteRequest(text: text, mode: mode.rawValue, language: language))
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw RewriteClientError.invalidResponse
+        }
+
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            if let errorResponse = try? JSONDecoder().decode(RewriteErrorResponse.self, from: data) {
+                throw RewriteClientError.server(errorResponse.displayMessage)
+            }
+            throw RewriteClientError.server("Service error \(httpResponse.statusCode)")
         }
 
         let decoded = try JSONDecoder().decode(RewriteResponse.self, from: data)
         return decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct RewriteErrorResponse: Decodable {
+    let detail: Detail
+
+    var displayMessage: String {
+        switch detail {
+        case .message(let message):
+            return message
+        case .validation:
+            return "Request was invalid"
+        }
+    }
+
+    enum Detail: Decodable {
+        case message(String)
+        case validation
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let message = try? container.decode(String.self) {
+                self = .message(message)
+                return
+            }
+            self = .validation
+        }
     }
 }

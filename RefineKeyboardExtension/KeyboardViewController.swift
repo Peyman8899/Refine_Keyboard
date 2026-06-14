@@ -188,6 +188,11 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func refineCurrentText(mode: RewriteMode) {
+        guard hasFullAccess else {
+            statusLabel.text = "Enable Full Access"
+            return
+        }
+
         let text = (textDocumentProxy.documentContextBeforeInput ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -212,10 +217,25 @@ final class KeyboardViewController: UIInputViewController {
                 }
             } catch {
                 await MainActor.run {
-                    self.statusLabel.text = (error as? LocalizedError)?.errorDescription ?? "Could not refine"
+                    self.statusLabel.text = self.message(for: error)
                 }
             }
         }
+    }
+
+    private func message(for error: Error) -> String {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost:
+                return "No internet access"
+            case .timedOut:
+                return "Service timed out"
+            default:
+                return "Network error"
+            }
+        }
+
+        return (error as? LocalizedError)?.errorDescription ?? "Could not refine"
     }
 
     private func replaceCurrentDraft(original: String, refined: String) {
