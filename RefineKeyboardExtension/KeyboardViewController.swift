@@ -16,6 +16,7 @@ final class KeyboardViewController: UIInputViewController {
     private var letterButtons: [UIButton] = []
     private var isShifted = false
     private var keyboardMode: KeyboardMode = .letters
+    private var lastRewriteCharacterCount: Int?
 
     private let keyboardBackground = UIColor(red: 0.84, green: 0.86, blue: 0.89, alpha: 1)
     private let systemKeyBackground = UIColor(red: 0.69, green: 0.72, blue: 0.77, alpha: 1)
@@ -179,7 +180,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         commandRow.addArrangedSubview(mode)
 
-        let emoji = makeSystemButton(title: nil, imageName: "face.smiling")
+        let emoji = makeSystemButton(title: "☺")
         emoji.widthAnchor.constraint(equalToConstant: 50).isActive = true
         addTapAction(to: emoji) { [weak self] in
             guard let self else { return }
@@ -190,14 +191,14 @@ final class KeyboardViewController: UIInputViewController {
 
         let space = makeKeyButton(title: "space")
         addTapAction(to: space) { [weak self] in
-            self?.textDocumentProxy.insertText(" ")
+            self?.insertUserText(" ")
         }
         commandRow.addArrangedSubview(space)
 
         let enter = makeSystemButton(title: "return")
         enter.widthAnchor.constraint(equalToConstant: 82).isActive = true
         addTapAction(to: enter) { [weak self] in
-            self?.textDocumentProxy.insertText("\n")
+            self?.insertUserText("\n")
         }
         commandRow.addArrangedSubview(enter)
 
@@ -216,7 +217,7 @@ final class KeyboardViewController: UIInputViewController {
             let button = makeKeyButton(title: key)
             button.titleLabel?.font = .systemFont(ofSize: 24, weight: .regular)
             addTapAction(to: button) { [weak self] in
-                self?.textDocumentProxy.insertText(key)
+                self?.insertUserText(key)
             }
             row.addArrangedSubview(button)
         }
@@ -239,7 +240,7 @@ final class KeyboardViewController: UIInputViewController {
             let button = makeKeyButton(title: key)
             button.titleLabel?.font = .systemFont(ofSize: 24, weight: .regular)
             addTapAction(to: button) { [weak self] in
-                self?.textDocumentProxy.insertText(key)
+                self?.insertUserText(key)
             }
             keysRow.addArrangedSubview(button)
         }
@@ -248,7 +249,7 @@ final class KeyboardViewController: UIInputViewController {
         let delete = makeSystemButton(title: nil, imageName: "delete.left")
         delete.widthAnchor.constraint(equalToConstant: 58).isActive = true
         addTapAction(to: delete) { [weak self] in
-            self?.textDocumentProxy.deleteBackward()
+            self?.deleteUserText()
         }
         row.addArrangedSubview(delete)
 
@@ -260,7 +261,7 @@ final class KeyboardViewController: UIInputViewController {
         emojis.forEach { emoji in
             let button = makeFlatEmojiButton(title: emoji)
             addTapAction(to: button) { [weak self] in
-                self?.textDocumentProxy.insertText(emoji)
+                self?.insertUserText(emoji)
             }
             row.addArrangedSubview(button)
         }
@@ -344,7 +345,7 @@ final class KeyboardViewController: UIInputViewController {
         let delete = makeSystemButton(title: nil, imageName: "delete.left")
         delete.widthAnchor.constraint(equalToConstant: 58).isActive = true
         addTapAction(to: delete) { [weak self] in
-            self?.textDocumentProxy.deleteBackward()
+            self?.deleteUserText()
         }
         row.addArrangedSubview(delete)
 
@@ -380,7 +381,7 @@ final class KeyboardViewController: UIInputViewController {
         delete.tintColor = .label
         delete.widthAnchor.constraint(equalToConstant: 44).isActive = true
         addTapAction(to: delete) { [weak self] in
-            self?.textDocumentProxy.deleteBackward()
+            self?.deleteUserText()
         }
         row.addArrangedSubview(delete)
 
@@ -407,7 +408,7 @@ final class KeyboardViewController: UIInputViewController {
         letterButtons.append(button)
         addTapAction(to: button) { [weak self, weak button] in
             guard let self, let title = button?.configuration?.title else { return }
-            self.textDocumentProxy.insertText(self.isShifted ? title.uppercased() : title.lowercased())
+            self.insertUserText(self.isShifted ? title.uppercased() : title.lowercased())
             if self.isShifted {
                 self.isShifted = false
                 self.refreshLetterCasing()
@@ -497,6 +498,16 @@ final class KeyboardViewController: UIInputViewController {
         button.addAction(handler, for: .touchUpInside)
     }
 
+    private func insertUserText(_ text: String) {
+        lastRewriteCharacterCount = nil
+        textDocumentProxy.insertText(text)
+    }
+
+    private func deleteUserText() {
+        lastRewriteCharacterCount = nil
+        textDocumentProxy.deleteBackward()
+    }
+
     private func addPressFeedback(to button: UIButton) {
         button.addAction(UIAction { [weak button] _ in
             button?.alpha = 0.72
@@ -559,8 +570,8 @@ final class KeyboardViewController: UIInputViewController {
             return
         }
 
-        let text = (textDocumentProxy.documentContextBeforeInput ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let contextBeforeInput = textDocumentProxy.documentContextBeforeInput ?? ""
+        let text = contextBeforeInput.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !text.isEmpty else {
             showStatus("Type first")
@@ -577,7 +588,7 @@ final class KeyboardViewController: UIInputViewController {
                     if refined == text {
                         self.showStatus("No change")
                     } else {
-                        self.replaceCurrentDraft(original: text, refined: refined)
+                        self.replaceCurrentDraft(contextBeforeInput: contextBeforeInput, refined: refined)
                         self.showStatus("Inserted")
                     }
                 }
@@ -615,11 +626,13 @@ final class KeyboardViewController: UIInputViewController {
         return (error as? LocalizedError)?.errorDescription ?? "Could not refine"
     }
 
-    private func replaceCurrentDraft(original: String, refined: String) {
+    private func replaceCurrentDraft(contextBeforeInput: String, refined: String) {
         guard !refined.isEmpty else { return }
-        original.forEach { _ in
+        let deletionCount = max(contextBeforeInput.count, lastRewriteCharacterCount ?? 0)
+        (0..<deletionCount).forEach { _ in
             textDocumentProxy.deleteBackward()
         }
         textDocumentProxy.insertText(refined)
+        lastRewriteCharacterCount = refined.count
     }
 }
