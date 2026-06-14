@@ -4,7 +4,8 @@ final class KeyboardViewController: UIInputViewController {
     private let client = RewriteClient()
     private var outputLanguage = KeyboardSettings.rewriteLanguage
     private let statusLabel = UILabel()
-    private var polishButton: UIButton?
+    private var languageButton: UIButton?
+    private var letterButtons: [UIButton] = []
     private var isShifted = false
 
     private let languages = [
@@ -49,18 +50,25 @@ final class KeyboardViewController: UIInputViewController {
 
         let modeRow = UIStackView()
         modeRow.axis = .horizontal
-        modeRow.spacing = 5
+        modeRow.spacing = 4
         modeRow.distribution = .fillEqually
-        RewriteMode.allCases.forEach { mode in
-            let button = makeActionButton(title: title(for: mode))
-            button.titleLabel?.font = .systemFont(ofSize: 12, weight: .semibold)
-            button.addAction(UIAction { [weak self] _ in
+
+        let language = makeActionButton(title: languageTitle())
+        languageButton = language
+        language.menu = makeLanguageMenu()
+        language.showsMenuAsPrimaryAction = true
+        modeRow.addArrangedSubview(language)
+
+        let actions: [(String, RewriteMode)] = [
+            ("Refine", .polish),
+            ("Warm", .warm),
+            ("Professional", .professional),
+            ("Short", .shorter)
+        ]
+        actions.forEach { title, mode in
+            let button = makeActionButton(title: title)
+            addTapAction(to: button) { [weak self] in
                 self?.refineCurrentText(mode: mode)
-            }, for: .touchUpInside)
-            if mode == .polish {
-                polishButton = button
-                button.menu = makeLanguageMenu()
-                button.showsMenuAsPrimaryAction = false
             }
             modeRow.addArrangedSubview(button)
         }
@@ -86,16 +94,16 @@ final class KeyboardViewController: UIInputViewController {
         commandRow.addArrangedSubview(globe)
 
         let space = makeKeyButton(title: "space")
-        space.addAction(UIAction { [weak self] _ in
+        addTapAction(to: space) { [weak self] in
             self?.textDocumentProxy.insertText(" ")
-        }, for: .touchUpInside)
+        }
         commandRow.addArrangedSubview(space)
 
         let enter = makeSystemButton(title: "return")
         enter.widthAnchor.constraint(equalToConstant: 78).isActive = true
-        enter.addAction(UIAction { [weak self] _ in
+        addTapAction(to: enter) { [weak self] in
             self?.textDocumentProxy.insertText("\n")
-        }, for: .touchUpInside)
+        }
         commandRow.addArrangedSubview(enter)
 
         root.addArrangedSubview(commandRow)
@@ -123,11 +131,11 @@ final class KeyboardViewController: UIInputViewController {
 
         let shift = makeSystemButton(title: nil, imageName: "shift")
         shift.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        shift.addAction(UIAction { [weak self] _ in
+        addTapAction(to: shift) { [weak self] in
             guard let self else { return }
             self.isShifted.toggle()
             self.refreshLetterCasing()
-        }, for: .touchUpInside)
+        }
         row.addArrangedSubview(shift)
 
         let lettersRow = makeRow()
@@ -136,9 +144,9 @@ final class KeyboardViewController: UIInputViewController {
 
         let delete = makeSystemButton(title: nil, imageName: "delete.left")
         delete.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        delete.addAction(UIAction { [weak self] _ in
+        addTapAction(to: delete) { [weak self] in
             self?.textDocumentProxy.deleteBackward()
-        }, for: .touchUpInside)
+        }
         row.addArrangedSubview(delete)
 
         return row
@@ -161,30 +169,21 @@ final class KeyboardViewController: UIInputViewController {
     private func makeLetterButton(character: Character) -> UIButton {
         let button = makeKeyButton(title: String(character).uppercased())
         button.titleLabel?.font = .systemFont(ofSize: 22, weight: .regular)
-        button.addAction(UIAction { [weak self, weak button] _ in
+        letterButtons.append(button)
+        addTapAction(to: button) { [weak self, weak button] in
             guard let self, let title = button?.configuration?.title else { return }
             self.textDocumentProxy.insertText(self.isShifted ? title.uppercased() : title.lowercased())
             if self.isShifted {
                 self.isShifted = false
                 self.refreshLetterCasing()
             }
-        }, for: .touchUpInside)
+        }
         return button
     }
 
     private func refreshLetterCasing() {
-        refreshLetterCasing(in: view)
-    }
-
-    private func refreshLetterCasing(in parent: UIView) {
-        parent.subviews.forEach { child in
-            if let button = child as? UIButton,
-               let title = button.configuration?.title,
-               title.count == 1,
-               title.rangeOfCharacter(from: .letters) != nil {
-                button.configuration?.title = title.uppercased()
-            }
-            refreshLetterCasing(in: child)
+        letterButtons.forEach { button in
+            button.configuration?.title = button.configuration?.title?.uppercased()
         }
     }
 
@@ -202,7 +201,7 @@ final class KeyboardViewController: UIInputViewController {
         button.titleLabel?.adjustsFontSizeToFitWidth = true
         button.titleLabel?.minimumScaleFactor = 0.55
         button.titleLabel?.lineBreakMode = .byTruncatingTail
-        button.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 38).isActive = true
         return button
     }
 
@@ -224,7 +223,7 @@ final class KeyboardViewController: UIInputViewController {
         button.titleLabel?.adjustsFontSizeToFitWidth = true
         button.titleLabel?.minimumScaleFactor = 0.55
         button.titleLabel?.lineBreakMode = .byTruncatingTail
-        button.heightAnchor.constraint(equalToConstant: 42).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 46).isActive = true
         return button
     }
 
@@ -244,26 +243,23 @@ final class KeyboardViewController: UIInputViewController {
         button.titleLabel?.font = .systemFont(ofSize: 16, weight: .regular)
         button.titleLabel?.adjustsFontSizeToFitWidth = true
         button.titleLabel?.minimumScaleFactor = 0.7
-        button.heightAnchor.constraint(equalToConstant: 42).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 46).isActive = true
         return button
     }
 
-    private func title(for mode: RewriteMode) -> String {
-        switch mode {
-        case .polish:
-            return outputLanguage == "Auto" ? "Polish" : "Polish \(languageCode(for: outputLanguage))"
-        case .warm:
-            return "Warm"
-        case .professional:
-            return "Professional"
-        case .shorter:
-            return "Short"
-        }
+    private func addTapAction(to button: UIButton, action: @escaping () -> Void) {
+        let handler = UIAction { _ in action() }
+        button.addAction(handler, for: .touchUpInside)
+        button.addAction(UIAction { _ in action() }, for: .touchUpOutside)
     }
 
-    private func updatePolishButtonTitle() {
-        polishButton?.configuration?.title = title(for: .polish)
-        polishButton?.menu = makeLanguageMenu()
+    private func languageTitle() -> String {
+        outputLanguage == "Auto" ? "Auto" : outputLanguage
+    }
+
+    private func updateLanguageButtonTitle() {
+        languageButton?.configuration?.title = languageTitle()
+        languageButton?.menu = makeLanguageMenu()
     }
 
     private func languageCode(for language: String) -> String {
@@ -297,7 +293,7 @@ final class KeyboardViewController: UIInputViewController {
                 guard let self else { return }
                 self.outputLanguage = language
                 KeyboardSettings.sharedDefaults.set(language, forKey: KeyboardSettings.languageKey)
-                self.updatePolishButtonTitle()
+                self.updateLanguageButtonTitle()
                 self.showStatus(language == "Auto" ? "Language: Auto" : "Language: \(languageCode(for: language))")
             }
         }
@@ -342,12 +338,12 @@ final class KeyboardViewController: UIInputViewController {
 
     private func showStatus(_ message: String) {
         statusLabel.text = message
-        polishButton?.configuration?.title = message
+        languageButton?.configuration?.title = message
 
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_400_000_000)
             await MainActor.run {
-                self?.updatePolishButtonTitle()
+                self?.updateLanguageButtonTitle()
             }
         }
     }
