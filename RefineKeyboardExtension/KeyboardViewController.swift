@@ -19,6 +19,38 @@ final class KeyboardViewController: UIInputViewController {
 
     private let keyboardBackground = UIColor(red: 0.84, green: 0.86, blue: 0.89, alpha: 1)
     private let systemKeyBackground = UIColor(red: 0.69, green: 0.72, blue: 0.77, alpha: 1)
+    private let emojiCategories: [(String, [[String]])] = [
+        ("FREQUENTLY USED", [
+            ["😁", "💕", "❤️", "😊", "✌️", "😎", "👍", "🎉"],
+            ["😍", "😭", "😉", "🎵", "😂", "🌞", "🙁", "😔"],
+            ["☺️", "👀", "💅", "🙏", "👌", "😏", "🤷", "😐"]
+        ]),
+        ("SMILEYS & PEOPLE", [
+            ["😀", "🥹", "☺️", "😃", "😅", "😊", "😄", "😂"],
+            ["😇", "😆", "🤣", "🙂", "😉", "😍", "😘", "😜"],
+            ["🤔", "😬", "🙄", "😴", "😢", "😡", "👏", "👋"]
+        ]),
+        ("ANIMALS & NATURE", [
+            ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼"],
+            ["🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔"],
+            ["🌸", "🌹", "🌞", "🌙", "⭐️", "🔥", "🌈", "🌎"]
+        ]),
+        ("FOOD & DRINK", [
+            ["🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓"],
+            ["🍒", "🍑", "🥑", "🍔", "🍟", "🍕", "🌮", "🍣"],
+            ["🍩", "🍪", "🎂", "☕️", "🍺", "🍷", "🥂", "🧃"]
+        ]),
+        ("ACTIVITY", [
+            ["⚽️", "🏀", "🏈", "⚾️", "🎾", "🏐", "🎱", "🏓"],
+            ["🏃", "💃", "🕺", "🚴", "🏆", "🎮", "🎲", "🎯"],
+            ["🎵", "🎤", "🎧", "🎬", "🎨", "🎭", "🎸", "🎹"]
+        ]),
+        ("TRAVEL & OBJECTS", [
+            ["🚗", "🚕", "🚌", "🚎", "🏎️", "🚓", "✈️", "🚀"],
+            ["🏠", "🏢", "🏝️", "⛰️", "⌚️", "📱", "💻", "⌨️"],
+            ["💡", "📌", "📎", "✂️", "🔒", "🔑", "❤️", "✅"]
+        ])
+    ]
 
     private let languages = [
         "Auto", "English", "Spanish", "French", "German", "Italian", "Portuguese", "Dutch",
@@ -36,7 +68,7 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        keyboardHeightConstraint = view.heightAnchor.constraint(equalToConstant: 252)
+        keyboardHeightConstraint = view.heightAnchor.constraint(equalToConstant: 258)
         keyboardHeightConstraint?.priority = .defaultHigh
         keyboardHeightConstraint?.isActive = true
         setupKeyboard()
@@ -128,12 +160,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func renderEmojiKeyboard() {
-        [
-            ["😂", "🐰", "🧐", "🔥", "🌎", "👫", "💃", "🏃"],
-            ["😁", "🕺", "💕", "☄️", "👊", "💏", "😍", "👍"],
-            ["😘", "😭", "🍐", "🐣", "👄", "💐", "😉", "🤍"]
-        ].forEach { keyboardStack.addArrangedSubview(makeEmojiRow($0)) }
-
+        keyboardStack.addArrangedSubview(makeEmojiPager())
         keyboardStack.addArrangedSubview(makeEmojiTabsRow())
     }
 
@@ -238,6 +265,53 @@ final class KeyboardViewController: UIInputViewController {
             row.addArrangedSubview(button)
         }
         return row
+    }
+
+    private func makeEmojiPager() -> UIScrollView {
+        let scrollView = UIScrollView()
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.alwaysBounceHorizontal = true
+        scrollView.isPagingEnabled = true
+        scrollView.heightAnchor.constraint(equalToConstant: 154).isActive = true
+
+        let pages = UIStackView()
+        pages.axis = .horizontal
+        pages.spacing = 16
+        pages.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(pages)
+
+        emojiCategories.forEach { title, rows in
+            let page = makeEmojiCategoryPage(title: title, rows: rows)
+            page.widthAnchor.constraint(equalTo: view.widthAnchor, constant: -8).isActive = true
+            pages.addArrangedSubview(page)
+        }
+
+        NSLayoutConstraint.activate([
+            pages.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            pages.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            pages.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            pages.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            pages.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor)
+        ])
+
+        return scrollView
+    }
+
+    private func makeEmojiCategoryPage(title: String, rows: [[String]]) -> UIStackView {
+        let page = UIStackView()
+        page.axis = .vertical
+        page.spacing = 7
+
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.textColor = .secondaryLabel
+        titleLabel.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        page.addArrangedSubview(titleLabel)
+
+        rows.forEach { page.addArrangedSubview(makeEmojiRow($0)) }
+
+        return page
     }
 
     private func makeIndentedLetterRow(_ letters: String, sideInset: CGFloat) -> UIStackView {
