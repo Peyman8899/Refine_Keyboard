@@ -14,7 +14,7 @@ final class KeyboardViewController: UIInputViewController {
     private let keyboardStack = UIStackView()
     private var keyboardHeightConstraint: NSLayoutConstraint?
     private var letterButtons: [UIButton] = []
-    private var isShifted = false
+    private var isShifted = true
     private var keyboardMode: KeyboardMode = .letters
     private var lastRewriteCharacterCount: Int?
 
@@ -403,7 +403,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func makeLetterButton(character: Character) -> UIButton {
-        let button = makeKeyButton(title: String(character).lowercased())
+        let title = isShifted ? String(character).uppercased() : String(character).lowercased()
+        let button = makeKeyButton(title: title)
         button.titleLabel?.font = .systemFont(ofSize: 24, weight: .regular)
         letterButtons.append(button)
         addTapAction(to: button) { [weak self, weak button] in
@@ -571,7 +572,9 @@ final class KeyboardViewController: UIInputViewController {
         }
 
         let contextBeforeInput = textDocumentProxy.documentContextBeforeInput ?? ""
-        let text = contextBeforeInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let contextAfterInput = textDocumentProxy.documentContextAfterInput ?? ""
+        let fullDraft = contextBeforeInput + contextAfterInput
+        let text = fullDraft.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !text.isEmpty else {
             showStatus("Type first")
@@ -588,7 +591,11 @@ final class KeyboardViewController: UIInputViewController {
                     if refined == text {
                         self.showStatus("No change")
                     } else {
-                        self.replaceCurrentDraft(contextBeforeInput: contextBeforeInput, refined: refined)
+                        self.replaceCurrentDraft(
+                            contextBeforeInput: contextBeforeInput,
+                            contextAfterInput: contextAfterInput,
+                            refined: refined
+                        )
                         self.showStatus("Inserted")
                     }
                 }
@@ -626,9 +633,13 @@ final class KeyboardViewController: UIInputViewController {
         return (error as? LocalizedError)?.errorDescription ?? "Could not refine"
     }
 
-    private func replaceCurrentDraft(contextBeforeInput: String, refined: String) {
+    private func replaceCurrentDraft(contextBeforeInput: String, contextAfterInput: String, refined: String) {
         guard !refined.isEmpty else { return }
-        let deletionCount = max(contextBeforeInput.count, lastRewriteCharacterCount ?? 0)
+        if !contextAfterInput.isEmpty {
+            textDocumentProxy.adjustTextPosition(byCharacterOffset: contextAfterInput.count)
+        }
+        let availableDraftCount = contextBeforeInput.count + contextAfterInput.count
+        let deletionCount = max(availableDraftCount, lastRewriteCharacterCount ?? 0)
         (0..<deletionCount).forEach { _ in
             textDocumentProxy.deleteBackward()
         }
