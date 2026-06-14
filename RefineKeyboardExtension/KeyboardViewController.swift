@@ -5,6 +5,7 @@ final class KeyboardViewController: UIInputViewController {
     private var outputLanguage = KeyboardSettings.rewriteLanguage
     private let statusLabel = UILabel()
     private var polishButton: UIButton?
+    private var isShifted = false
 
     private let languages = [
         "Auto", "English", "Spanish", "French", "German", "Italian", "Portuguese", "Dutch",
@@ -26,33 +27,32 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func setupKeyboard() {
-        view.backgroundColor = UIColor.systemBackground
+        view.backgroundColor = UIColor(red: 0.82, green: 0.84, blue: 0.87, alpha: 1)
 
         let root = UIStackView()
         root.axis = .vertical
-        root.spacing = 8
+        root.spacing = 7
         root.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(root)
 
         NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
-            root.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
-            root.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
-            root.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8)
+            root.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 4),
+            root.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -4),
+            root.topAnchor.constraint(equalTo: view.topAnchor, constant: 6),
+            root.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -4)
         ])
 
         statusLabel.text = "Ready"
         statusLabel.font = .systemFont(ofSize: 12, weight: .medium)
         statusLabel.textColor = .secondaryLabel
         statusLabel.textAlignment = .center
-        root.addArrangedSubview(statusLabel)
 
         let modeRow = UIStackView()
         modeRow.axis = .horizontal
-        modeRow.spacing = 6
+        modeRow.spacing = 5
         modeRow.distribution = .fillEqually
         RewriteMode.allCases.forEach { mode in
-            let button = makeButton(title: title(for: mode))
+            let button = makeActionButton(title: title(for: mode))
             button.titleLabel?.font = .systemFont(ofSize: 12, weight: .semibold)
             button.addAction(UIAction { [weak self] _ in
                 self?.refineCurrentText(mode: mode)
@@ -66,46 +66,33 @@ final class KeyboardViewController: UIInputViewController {
         }
         root.addArrangedSubview(modeRow)
 
-        ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"].forEach { rowText in
-            let row = UIStackView()
-            row.axis = .horizontal
-            row.spacing = 5
-            row.distribution = .fillEqually
-            rowText.forEach { character in
-                let button = makeButton(title: String(character))
-                button.addAction(UIAction { [weak self] _ in
-                    self?.textDocumentProxy.insertText(String(character).lowercased())
-                }, for: .touchUpInside)
-                row.addArrangedSubview(button)
-            }
-            root.addArrangedSubview(row)
-        }
+        root.addArrangedSubview(makeLetterRow("QWERTYUIOP"))
+        root.addArrangedSubview(makeIndentedLetterRow("ASDFGHJKL", sideInset: 18))
+        root.addArrangedSubview(makeThirdLetterRow())
 
         let commandRow = UIStackView()
         commandRow.axis = .horizontal
         commandRow.spacing = 6
         commandRow.distribution = .fill
 
-        let nextKeyboard = makeButton(title: "Next")
-        nextKeyboard.widthAnchor.constraint(equalToConstant: 48).isActive = true
+        let nextKeyboard = makeSystemButton(title: "123")
+        nextKeyboard.widthAnchor.constraint(equalToConstant: 54).isActive = true
         nextKeyboard.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
         commandRow.addArrangedSubview(nextKeyboard)
 
-        let space = makeButton(title: "space")
+        let globe = makeSystemButton(title: nil, imageName: "globe")
+        globe.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        globe.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
+        commandRow.addArrangedSubview(globe)
+
+        let space = makeKeyButton(title: "space")
         space.addAction(UIAction { [weak self] _ in
             self?.textDocumentProxy.insertText(" ")
         }, for: .touchUpInside)
         commandRow.addArrangedSubview(space)
 
-        let delete = makeButton(title: "Del")
-        delete.widthAnchor.constraint(equalToConstant: 56).isActive = true
-        delete.addAction(UIAction { [weak self] _ in
-            self?.textDocumentProxy.deleteBackward()
-        }, for: .touchUpInside)
-        commandRow.addArrangedSubview(delete)
-
-        let enter = makeButton(title: "return")
-        enter.widthAnchor.constraint(equalToConstant: 74).isActive = true
+        let enter = makeSystemButton(title: "return")
+        enter.widthAnchor.constraint(equalToConstant: 78).isActive = true
         enter.addAction(UIAction { [weak self] _ in
             self?.textDocumentProxy.insertText("\n")
         }, for: .touchUpInside)
@@ -114,20 +101,150 @@ final class KeyboardViewController: UIInputViewController {
         root.addArrangedSubview(commandRow)
     }
 
-    private func makeButton(title: String) -> UIButton {
+    private func makeLetterRow(_ letters: String) -> UIStackView {
+        let row = makeRow()
+        letters.forEach { row.addArrangedSubview(makeLetterButton(character: $0)) }
+        return row
+    }
+
+    private func makeIndentedLetterRow(_ letters: String, sideInset: CGFloat) -> UIStackView {
+        let container = makeRow()
+        container.distribution = .fill
+        container.addArrangedSubview(makeSpacer(width: sideInset))
+        let lettersRow = makeLetterRow(letters)
+        container.addArrangedSubview(lettersRow)
+        container.addArrangedSubview(makeSpacer(width: sideInset))
+        return container
+    }
+
+    private func makeThirdLetterRow() -> UIStackView {
+        let row = makeRow()
+        row.distribution = .fill
+
+        let shift = makeSystemButton(title: nil, imageName: "shift")
+        shift.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        shift.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.isShifted.toggle()
+            self.refreshLetterCasing()
+        }, for: .touchUpInside)
+        row.addArrangedSubview(shift)
+
+        let lettersRow = makeRow()
+        "ZXCVBNM".forEach { lettersRow.addArrangedSubview(makeLetterButton(character: $0)) }
+        row.addArrangedSubview(lettersRow)
+
+        let delete = makeSystemButton(title: nil, imageName: "delete.left")
+        delete.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        delete.addAction(UIAction { [weak self] _ in
+            self?.textDocumentProxy.deleteBackward()
+        }, for: .touchUpInside)
+        row.addArrangedSubview(delete)
+
+        return row
+    }
+
+    private func makeRow() -> UIStackView {
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.spacing = 5
+        row.distribution = .fillEqually
+        return row
+    }
+
+    private func makeSpacer(width: CGFloat) -> UIView {
+        let view = UIView()
+        view.widthAnchor.constraint(equalToConstant: width).isActive = true
+        return view
+    }
+
+    private func makeLetterButton(character: Character) -> UIButton {
+        let button = makeKeyButton(title: String(character).uppercased())
+        button.titleLabel?.font = .systemFont(ofSize: 22, weight: .regular)
+        button.addAction(UIAction { [weak self, weak button] _ in
+            guard let self, let title = button?.configuration?.title else { return }
+            self.textDocumentProxy.insertText(self.isShifted ? title.uppercased() : title.lowercased())
+            if self.isShifted {
+                self.isShifted = false
+                self.refreshLetterCasing()
+            }
+        }, for: .touchUpInside)
+        return button
+    }
+
+    private func refreshLetterCasing() {
+        refreshLetterCasing(in: view)
+    }
+
+    private func refreshLetterCasing(in parent: UIView) {
+        parent.subviews.forEach { child in
+            if let button = child as? UIButton,
+               let title = button.configuration?.title,
+               title.count == 1,
+               title.rangeOfCharacter(from: .letters) != nil {
+                button.configuration?.title = title.uppercased()
+            }
+            refreshLetterCasing(in: child)
+        }
+    }
+
+    private func makeActionButton(title: String) -> UIButton {
         var configuration = UIButton.Configuration.filled()
         configuration.title = title
-        configuration.baseBackgroundColor = .secondarySystemBackground
+        configuration.baseBackgroundColor = UIColor(red: 0.92, green: 0.93, blue: 0.96, alpha: 1)
         configuration.baseForegroundColor = .label
         configuration.cornerStyle = .medium
         configuration.titleLineBreakMode = .byTruncatingTail
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4)
 
         let button = UIButton(configuration: configuration)
         button.titleLabel?.numberOfLines = 1
         button.titleLabel?.adjustsFontSizeToFitWidth = true
         button.titleLabel?.minimumScaleFactor = 0.55
         button.titleLabel?.lineBreakMode = .byTruncatingTail
-        button.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        return button
+    }
+
+    private func makeKeyButton(title: String) -> UIButton {
+        var configuration = UIButton.Configuration.filled()
+        configuration.title = title
+        configuration.baseBackgroundColor = .white
+        configuration.baseForegroundColor = .label
+        configuration.cornerStyle = .small
+        configuration.titleLineBreakMode = .byTruncatingTail
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 2, bottom: 0, trailing: 2)
+
+        let button = UIButton(configuration: configuration)
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOpacity = 0.22
+        button.layer.shadowRadius = 0
+        button.layer.shadowOffset = CGSize(width: 0, height: 1)
+        button.titleLabel?.numberOfLines = 1
+        button.titleLabel?.adjustsFontSizeToFitWidth = true
+        button.titleLabel?.minimumScaleFactor = 0.55
+        button.titleLabel?.lineBreakMode = .byTruncatingTail
+        button.heightAnchor.constraint(equalToConstant: 42).isActive = true
+        return button
+    }
+
+    private func makeSystemButton(title: String?, imageName: String? = nil) -> UIButton {
+        var configuration = UIButton.Configuration.filled()
+        configuration.title = title
+        configuration.baseBackgroundColor = UIColor(red: 0.68, green: 0.71, blue: 0.76, alpha: 1)
+        configuration.baseForegroundColor = .label
+        configuration.cornerStyle = .small
+        configuration.titleLineBreakMode = .byTruncatingTail
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4)
+        if let imageName {
+            configuration.image = UIImage(systemName: imageName)
+        }
+
+        let button = UIButton(configuration: configuration)
+        button.titleLabel?.font = .systemFont(ofSize: 16, weight: .regular)
+        button.titleLabel?.adjustsFontSizeToFitWidth = true
+        button.titleLabel?.minimumScaleFactor = 0.7
+        button.heightAnchor.constraint(equalToConstant: 42).isActive = true
         return button
     }
 
@@ -181,7 +298,7 @@ final class KeyboardViewController: UIInputViewController {
                 self.outputLanguage = language
                 KeyboardSettings.sharedDefaults.set(language, forKey: KeyboardSettings.languageKey)
                 self.updatePolishButtonTitle()
-                self.statusLabel.text = "Language: \(language)"
+                self.showStatus(language == "Auto" ? "Language: Auto" : "Language: \(languageCode(for: language))")
             }
         }
         return UIMenu(title: "Output Language", children: actions)
@@ -189,7 +306,7 @@ final class KeyboardViewController: UIInputViewController {
 
     private func refineCurrentText(mode: RewriteMode) {
         guard hasFullAccess else {
-            statusLabel.text = "Enable Full Access"
+            showStatus("Enable Full Access")
             return
         }
 
@@ -197,11 +314,11 @@ final class KeyboardViewController: UIInputViewController {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !text.isEmpty else {
-            statusLabel.text = "Type a message first"
+            showStatus("Type first")
             return
         }
 
-        statusLabel.text = "Refining..."
+        showStatus("Refining...")
 
         Task { [weak self] in
             guard let self else { return }
@@ -209,16 +326,28 @@ final class KeyboardViewController: UIInputViewController {
                 let refined = try await client.rewrite(text: text, mode: mode, language: outputLanguage)
                 await MainActor.run {
                     if refined == text {
-                        self.statusLabel.text = "No changes suggested"
+                        self.showStatus("No change")
                     } else {
                         self.replaceCurrentDraft(original: text, refined: refined)
-                        self.statusLabel.text = "Inserted"
+                        self.showStatus("Inserted")
                     }
                 }
             } catch {
                 await MainActor.run {
-                    self.statusLabel.text = self.message(for: error)
+                    self.showStatus(self.message(for: error))
                 }
+            }
+        }
+    }
+
+    private func showStatus(_ message: String) {
+        statusLabel.text = message
+        polishButton?.configuration?.title = message
+
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            await MainActor.run {
+                self?.updatePolishButtonTitle()
             }
         }
     }
