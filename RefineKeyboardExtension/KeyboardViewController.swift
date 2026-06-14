@@ -85,13 +85,14 @@ final class KeyboardViewController: UIInputViewController {
 
         let nextKeyboard = makeSystemButton(title: "123")
         nextKeyboard.widthAnchor.constraint(equalToConstant: 54).isActive = true
-        nextKeyboard.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
         commandRow.addArrangedSubview(nextKeyboard)
 
-        let globe = makeSystemButton(title: nil, imageName: "globe")
-        globe.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        globe.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
-        commandRow.addArrangedSubview(globe)
+        let stickers = makeStickerButton()
+        stickers.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        addTapAction(to: stickers) { [weak self] in
+            self?.showStatus("Stickers")
+        }
+        commandRow.addArrangedSubview(stickers)
 
         let space = makeKeyButton(title: "space")
         addTapAction(to: space) { [weak self] in
@@ -245,6 +246,46 @@ final class KeyboardViewController: UIInputViewController {
         button.titleLabel?.minimumScaleFactor = 0.7
         button.heightAnchor.constraint(equalToConstant: 46).isActive = true
         return button
+    }
+
+    private func makeStickerButton() -> UIButton {
+        var configuration = UIButton.Configuration.filled()
+        configuration.image = stickerIcon()
+        configuration.baseBackgroundColor = UIColor(red: 0.68, green: 0.71, blue: 0.76, alpha: 1)
+        configuration.baseForegroundColor = .label
+        configuration.cornerStyle = .small
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4)
+
+        let button = UIButton(configuration: configuration)
+        button.heightAnchor.constraint(equalToConstant: 46).isActive = true
+        return button
+    }
+
+    private func stickerIcon() -> UIImage {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 30, height: 28))
+        return renderer.image { context in
+            UIColor.label.setStroke()
+            UIColor.clear.setFill()
+
+            let back = UIBezierPath(roundedRect: CGRect(x: 5, y: 3, width: 17, height: 17), cornerRadius: 4)
+            back.lineWidth = 2.4
+            back.stroke()
+
+            let front = UIBezierPath(roundedRect: CGRect(x: 10, y: 8, width: 17, height: 17), cornerRadius: 4)
+            front.lineWidth = 2.4
+            front.stroke()
+
+            let fold = UIBezierPath()
+            fold.move(to: CGPoint(x: 20, y: 25))
+            fold.addLine(to: CGPoint(x: 27, y: 18))
+            fold.addLine(to: CGPoint(x: 27, y: 25))
+            fold.close()
+            fold.lineWidth = 2.2
+            fold.stroke()
+            context.cgContext.setFillColor(UIColor.label.cgColor)
+            context.cgContext.fillEllipse(in: CGRect(x: 14, y: 13, width: 2.8, height: 2.8))
+            context.cgContext.fillEllipse(in: CGRect(x: 20, y: 13, width: 2.8, height: 2.8))
+        }.withRenderingMode(.alwaysOriginal)
     }
 
     private func addTapAction(to button: UIButton, action: @escaping () -> Void) {
