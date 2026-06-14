@@ -1,12 +1,20 @@
 import UIKit
 
 final class KeyboardViewController: UIInputViewController {
+    private enum KeyboardMode {
+        case letters
+        case numbers
+        case stickers
+    }
+
     private let client = RewriteClient()
     private var outputLanguage = KeyboardSettings.rewriteLanguage
     private let statusLabel = UILabel()
     private var languageButton: UIButton?
+    private let keyboardStack = UIStackView()
     private var letterButtons: [UIButton] = []
     private var isShifted = false
+    private var keyboardMode: KeyboardMode = .letters
 
     private let languages = [
         "Auto", "English", "Spanish", "French", "German", "Italian", "Portuguese", "Dutch",
@@ -74,21 +82,73 @@ final class KeyboardViewController: UIInputViewController {
         }
         root.addArrangedSubview(modeRow)
 
-        root.addArrangedSubview(makeLetterRow("QWERTYUIOP"))
-        root.addArrangedSubview(makeIndentedLetterRow("ASDFGHJKL", sideInset: 18))
-        root.addArrangedSubview(makeThirdLetterRow())
+        keyboardStack.axis = .vertical
+        keyboardStack.spacing = 7
+        keyboardStack.translatesAutoresizingMaskIntoConstraints = false
+        root.addArrangedSubview(keyboardStack)
+        renderKeyboard()
+    }
 
+    private func renderKeyboard() {
+        keyboardStack.arrangedSubviews.forEach { view in
+            keyboardStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        letterButtons.removeAll()
+
+        switch keyboardMode {
+        case .letters:
+            renderLetterKeyboard()
+        case .numbers:
+            renderNumberKeyboard()
+        case .stickers:
+            renderStickerKeyboard()
+        }
+    }
+
+    private func renderLetterKeyboard() {
+        keyboardStack.addArrangedSubview(makeLetterRow("QWERTYUIOP"))
+        keyboardStack.addArrangedSubview(makeIndentedLetterRow("ASDFGHJKL", sideInset: 18))
+        keyboardStack.addArrangedSubview(makeThirdLetterRow())
+        keyboardStack.addArrangedSubview(makeCommandRow(modeTitle: "123", stickerAction: .stickers))
+    }
+
+    private func renderNumberKeyboard() {
+        keyboardStack.addArrangedSubview(makeTextRow(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]))
+        keyboardStack.addArrangedSubview(makeTextRow(["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""]))
+        keyboardStack.addArrangedSubview(makeTextRow([".", ",", "?", "!", "'", "#", "%", "*", "+", "="]))
+        keyboardStack.addArrangedSubview(makeCommandRow(modeTitle: "ABC", stickerAction: .stickers))
+    }
+
+    private func renderStickerKeyboard() {
+        keyboardStack.addArrangedSubview(makeStickerRow(["🙂", "😂", "😍", "👍", "🙏", "🔥"]))
+        keyboardStack.addArrangedSubview(makeStickerRow(["🎉", "❤️", "✅", "⭐️", "💯", "✨"]))
+        keyboardStack.addArrangedSubview(makeStickerRow(["👋", "👏", "🤝", "💬", "📌", "🚀"]))
+        keyboardStack.addArrangedSubview(makeCommandRow(modeTitle: "ABC", stickerAction: .letters))
+    }
+
+    private func makeCommandRow(modeTitle: String, stickerAction: KeyboardMode) -> UIStackView {
         let commandRow = UIStackView()
         commandRow.axis = .horizontal
         commandRow.spacing = 6
         commandRow.distribution = .fill
 
-        let nextKeyboard = makeSystemButton(title: "123")
-        nextKeyboard.widthAnchor.constraint(equalToConstant: 54).isActive = true
-        commandRow.addArrangedSubview(nextKeyboard)
+        let mode = makeSystemButton(title: modeTitle)
+        mode.widthAnchor.constraint(equalToConstant: 54).isActive = true
+        addTapAction(to: mode) { [weak self] in
+            guard let self else { return }
+            self.keyboardMode = modeTitle == "ABC" ? .letters : .numbers
+            self.renderKeyboard()
+        }
+        commandRow.addArrangedSubview(mode)
 
         let stickers = makeStickerButton()
         stickers.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        addTapAction(to: stickers) { [weak self] in
+            guard let self else { return }
+            self.keyboardMode = stickerAction
+            self.renderKeyboard()
+        }
         commandRow.addArrangedSubview(stickers)
 
         let space = makeKeyButton(title: "space")
@@ -104,12 +164,38 @@ final class KeyboardViewController: UIInputViewController {
         }
         commandRow.addArrangedSubview(enter)
 
-        root.addArrangedSubview(commandRow)
+        return commandRow
     }
 
     private func makeLetterRow(_ letters: String) -> UIStackView {
         let row = makeRow()
         letters.forEach { row.addArrangedSubview(makeLetterButton(character: $0)) }
+        return row
+    }
+
+    private func makeTextRow(_ keys: [String]) -> UIStackView {
+        let row = makeRow()
+        keys.forEach { key in
+            let button = makeKeyButton(title: key)
+            button.titleLabel?.font = .systemFont(ofSize: 22, weight: .regular)
+            addTapAction(to: button) { [weak self] in
+                self?.textDocumentProxy.insertText(key)
+            }
+            row.addArrangedSubview(button)
+        }
+        return row
+    }
+
+    private func makeStickerRow(_ stickers: [String]) -> UIStackView {
+        let row = makeRow()
+        stickers.forEach { sticker in
+            let button = makeKeyButton(title: sticker)
+            button.titleLabel?.font = .systemFont(ofSize: 24, weight: .regular)
+            addTapAction(to: button) { [weak self] in
+                self?.textDocumentProxy.insertText(sticker)
+            }
+            row.addArrangedSubview(button)
+        }
         return row
     }
 
