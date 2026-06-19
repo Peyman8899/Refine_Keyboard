@@ -14,6 +14,7 @@
 		110000000000000000000005 /* RewriteClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000202 /* RewriteClient.swift */; };
 		110000000000000000000006 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000203 /* SettingsStore.swift */; };
 		110000000000000000000007 /* RefineKeyboardExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 110000000000000000000302 /* RefineKeyboardExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		110000000000000000000008 /* KeyPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000206 /* KeyPreviewView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -51,6 +52,7 @@
 		110000000000000000000203 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		110000000000000000000204 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		110000000000000000000205 /* RefineKeyboardExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RefineKeyboardExtension.entitlements; sourceTree = "<group>"; };
+		110000000000000000000206 /* KeyPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyPreviewView.swift; sourceTree = "<group>"; };
 		110000000000000000000301 /* RefineKeyboard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RefineKeyboard.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		110000000000000000000302 /* RefineKeyboardExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RefineKeyboardExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -98,6 +100,7 @@
 			isa = PBXGroup;
 			children = (
 				110000000000000000000201 /* KeyboardViewController.swift */,
+				110000000000000000000206 /* KeyPreviewView.swift */,
 				110000000000000000000202 /* RewriteClient.swift */,
 				110000000000000000000203 /* SettingsStore.swift */,
 				110000000000000000000204 /* Info.plist */,
@@ -205,6 +208,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				110000000000000000000004 /* KeyboardViewController.swift in Sources */,
+				110000000000000000000008 /* KeyPreviewView.swift in Sources */,
 				110000000000000000000005 /* RewriteClient.swift in Sources */,
 				110000000000000000000006 /* SettingsStore.swift in Sources */,
 			);
