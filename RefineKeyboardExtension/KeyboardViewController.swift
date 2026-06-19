@@ -712,6 +712,10 @@ final class KeyboardViewController: UIInputViewController {
             showStatus("Enable Full Access")
             return
         }
+        guard KeyboardSettings.isSubscriptionActive else {
+            showStatus("Open RefineKeyboard app to subscribe")
+            return
+        }
 
         let contextBeforeInput = textDocumentProxy.documentContextBeforeInput ?? ""
         let contextAfterInput = textDocumentProxy.documentContextAfterInput ?? ""
