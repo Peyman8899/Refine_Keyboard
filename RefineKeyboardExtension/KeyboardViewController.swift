@@ -10,7 +10,6 @@ final class KeyboardViewController: UIInputViewController {
 
     private let client = RewriteClient()
     private var outputLanguage = KeyboardSettings.rewriteLanguage
-    private let statusLabel = UILabel()
     private var languageButton: UIButton?
     private let keyboardStack = UIStackView()
     private var keyboardHeightConstraint: NSLayoutConstraint?
@@ -125,11 +124,6 @@ final class KeyboardViewController: UIInputViewController {
             root.topAnchor.constraint(equalTo: view.topAnchor, constant: 6),
             root.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -6)
         ])
-
-        statusLabel.text = "Ready"
-        statusLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        statusLabel.textColor = .secondaryLabel
-        statusLabel.textAlignment = .center
 
         let modeRow = UIStackView()
         modeRow.axis = .horizontal
@@ -733,7 +727,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func showStatus(_ message: String) {
-        statusLabel.text = message
+        languageButton?.configuration?.title = message
 
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_400_000_000)
