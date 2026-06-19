@@ -12,6 +12,7 @@ final class KeyboardViewController: UIInputViewController {
     private var outputLanguage = KeyboardSettings.rewriteLanguage
     private var languageButton: UIButton?
     private var statusTask: Task<Void, Never>?
+    private var deleteTimer: Timer?
     private let keyboardStack = UIStackView()
     private var keyboardHeightConstraint: NSLayoutConstraint?
     private var letterButtons: [UIButton] = []
@@ -242,14 +243,14 @@ final class KeyboardViewController: UIInputViewController {
         commandRow.addArrangedSubview(emoji)
 
         let space = makeKeyButton(title: "space", showsPreview: false)
-        addTapAction(to: space) { [weak self] in
+        addCharacterAction(to: space) { [weak self] in
             self?.insertCharacter(" ")
         }
         commandRow.addArrangedSubview(space)
 
         let enter = makeSystemButton(title: "return")
         enter.widthAnchor.constraint(equalToConstant: 82).isActive = true
-        addTapAction(to: enter) { [weak self] in
+        addCharacterAction(to: enter) { [weak self] in
             self?.insertCharacter("\n")
         }
         commandRow.addArrangedSubview(enter)
@@ -268,7 +269,7 @@ final class KeyboardViewController: UIInputViewController {
         keys.forEach { key in
             let button = makeKeyButton(title: key)
             button.titleLabel?.font = .systemFont(ofSize: 24, weight: .regular)
-            addTapAction(to: button) { [weak self] in
+            addCharacterAction(to: button) { [weak self] in
                 self?.insertCharacter(key)
             }
             row.addArrangedSubview(button)
@@ -289,7 +290,7 @@ final class KeyboardViewController: UIInputViewController {
         [".", ",", "?", "!", "'"].forEach { key in
             let button = makeKeyButton(title: key)
             button.titleLabel?.font = .systemFont(ofSize: 24, weight: .regular)
-            addTapAction(to: button) { [weak self] in
+            addCharacterAction(to: button) { [weak self] in
                 self?.insertCharacter(key)
             }
             keysRow.addArrangedSubview(button)
@@ -298,9 +299,7 @@ final class KeyboardViewController: UIInputViewController {
 
         let delete = makeSystemButton(title: nil, imageName: "delete.left")
         delete.widthAnchor.constraint(equalToConstant: 58).isActive = true
-        addTapAction(to: delete) { [weak self] in
-            self?.deleteCharacter()
-        }
+        addDeleteAction(to: delete)
         row.addArrangedSubview(delete)
 
         return row
@@ -310,7 +309,7 @@ final class KeyboardViewController: UIInputViewController {
         let row = makeRow()
         emojis.forEach { emoji in
             let button = makeFlatEmojiButton(title: emoji)
-            addTapAction(to: button) { [weak self] in
+            addCharacterAction(to: button) { [weak self] in
                 self?.insertCharacter(emoji)
             }
             row.addArrangedSubview(button)
@@ -408,9 +407,7 @@ final class KeyboardViewController: UIInputViewController {
 
         let delete = makeSystemButton(title: nil, imageName: "delete.left")
         delete.widthAnchor.constraint(equalToConstant: 58).isActive = true
-        addTapAction(to: delete) { [weak self] in
-            self?.deleteCharacter()
-        }
+        addDeleteAction(to: delete)
         row.addArrangedSubview(delete)
 
         updateShiftAppearance()
@@ -444,9 +441,7 @@ final class KeyboardViewController: UIInputViewController {
         let delete = UIButton(type: .system)
         delete.setImage(UIImage(systemName: "delete.left"), for: .normal)
         delete.tintColor = .label
-        addTapAction(to: delete) { [weak self] in
-            self?.deleteCharacter()
-        }
+        addDeleteAction(to: delete)
         row.addArrangedSubview(delete)
 
         return row
@@ -480,7 +475,7 @@ final class KeyboardViewController: UIInputViewController {
         let button = makeKeyButton(title: title)
         button.titleLabel?.font = .systemFont(ofSize: 24, weight: .regular)
         letterButtons.append(button)
-        addTapAction(to: button) { [weak self, weak button] in
+        addCharacterAction(to: button) { [weak self, weak button] in
             guard let self, let title = button?.configuration?.title else { return }
             let useUppercase = self.isShifted || self.capsLocked
             self.insertCharacter(useUppercase ? title.uppercased() : title.lowercased())
@@ -591,8 +586,35 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func addTapAction(to button: UIButton, action: @escaping () -> Void) {
-        let handler = UIAction { _ in action() }
-        button.addAction(handler, for: .touchUpInside)
+        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+    }
+
+    private func addCharacterAction(to button: UIButton, action: @escaping () -> Void) {
+        button.addAction(UIAction { _ in action() }, for: .touchDown)
+    }
+
+    private func addDeleteAction(to button: UIButton) {
+        button.addAction(UIAction { [weak self] _ in
+            self?.deleteCharacter()
+            self?.startDeleteRepeat()
+        }, for: .touchDown)
+        button.addAction(UIAction { [weak self] _ in
+            self?.stopDeleteRepeat()
+        }, for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
+    }
+
+    private func startDeleteRepeat() {
+        deleteTimer?.invalidate()
+        deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+            self?.deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                self?.deleteCharacter()
+            }
+        }
+    }
+
+    private func stopDeleteRepeat() {
+        deleteTimer?.invalidate()
+        deleteTimer = nil
     }
 
     private func addKeyPreview(to button: UIButton) {
