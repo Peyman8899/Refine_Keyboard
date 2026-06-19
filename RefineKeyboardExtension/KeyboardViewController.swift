@@ -11,6 +11,7 @@ final class KeyboardViewController: UIInputViewController {
     private let client = RewriteClient()
     private var outputLanguage = KeyboardSettings.rewriteLanguage
     private var languageButton: UIButton?
+    private var statusTask: Task<Void, Never>?
     private let keyboardStack = UIStackView()
     private var keyboardHeightConstraint: NSLayoutConstraint?
     private var letterButtons: [UIButton] = []
@@ -727,13 +728,12 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func showStatus(_ message: String) {
+        statusTask?.cancel()
         languageButton?.configuration?.title = message
-
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_400_000_000)
-            await MainActor.run {
-                self?.updateLanguageButtonTitle()
-            }
+        statusTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { self?.updateLanguageButtonTitle() }
         }
     }
 
