@@ -552,17 +552,21 @@ final class KeyboardViewController: UIInputViewController {
         configuration.title = title
         configuration.baseBackgroundColor = actionPillBackground
         configuration.baseForegroundColor = .label
-        configuration.cornerStyle = .fixed
-        configuration.background.cornerRadius = 8
+        configuration.cornerStyle = .capsule
         configuration.titleLineBreakMode = .byTruncatingTail
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4)
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var out = incoming
+            out.font = UIFont.systemFont(ofSize: 13, weight: .medium)
+            return out
+        }
 
         let button = UIButton(configuration: configuration)
         button.titleLabel?.numberOfLines = 1
         button.titleLabel?.adjustsFontSizeToFitWidth = true
-        button.titleLabel?.minimumScaleFactor = 0.5
+        button.titleLabel?.minimumScaleFactor = 0.6
         button.titleLabel?.lineBreakMode = .byTruncatingTail
-        button.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 34).isActive = true
         addPressFeedback(to: button)
         return button
     }
@@ -576,12 +580,12 @@ final class KeyboardViewController: UIInputViewController {
         button.titleLabel?.minimumScaleFactor = 0.55
         button.titleLabel?.lineBreakMode = .byTruncatingTail
         button.layer.backgroundColor = letterKeyBackground.cgColor
-        button.layer.cornerRadius = 5
+        button.layer.cornerRadius = 10
         button.layer.masksToBounds = false
         button.layer.shadowColor = UIColor.black.cgColor
-        button.layer.shadowOpacity = 0.2
+        button.layer.shadowOpacity = 0.3
         button.layer.shadowOffset = CGSize(width: 0, height: 1)
-        button.layer.shadowRadius = 0.5
+        button.layer.shadowRadius = 0
         button.heightAnchor.constraint(equalToConstant: 44).isActive = true
         if showsPreview {
             addKeyPreview(to: button)
@@ -596,22 +600,22 @@ final class KeyboardViewController: UIInputViewController {
         if let title {
             button.setTitle(title, for: .normal)
             button.setTitleColor(.label, for: .normal)
-            button.titleLabel?.font = .systemFont(ofSize: 16, weight: .regular)
+            button.titleLabel?.font = .systemFont(ofSize: 15, weight: .regular)
             button.titleLabel?.adjustsFontSizeToFitWidth = true
             button.titleLabel?.minimumScaleFactor = 0.7
         }
         if let imageName {
-            let symCfg = UIImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+            let symCfg = UIImage.SymbolConfiguration(pointSize: 15, weight: .regular)
             button.setImage(UIImage(systemName: imageName, withConfiguration: symCfg), for: .normal)
             button.tintColor = .label
         }
         button.layer.backgroundColor = specialKeyBackground.cgColor
-        button.layer.cornerRadius = 5
+        button.layer.cornerRadius = 10
         button.layer.masksToBounds = false
         button.layer.shadowColor = UIColor.black.cgColor
-        button.layer.shadowOpacity = 0.2
+        button.layer.shadowOpacity = 0.3
         button.layer.shadowOffset = CGSize(width: 0, height: 1)
-        button.layer.shadowRadius = 0.5
+        button.layer.shadowRadius = 0
         button.heightAnchor.constraint(equalToConstant: 44).isActive = true
         addPressFeedback(to: button)
         return button
@@ -737,16 +741,36 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func makeLanguageMenu() -> UIMenu {
-        let actions = languages.map { language in
+        let rewriteActions = languages.map { language in
             UIAction(title: language, state: language == outputLanguage ? .on : .off) { [weak self] _ in
                 guard let self else { return }
                 self.outputLanguage = language
                 KeyboardSettings.sharedDefaults.set(language, forKey: KeyboardSettings.languageKey)
                 self.updateLanguageButtonTitle()
-                self.showStatus(language == "Auto" ? "Language: Auto" : "Language: \(languageCode(for: language))")
+                self.showStatus(language == "Auto" ? "Rewrite: Auto" : "Rewrite → \(self.languageCode(for: language))")
             }
         }
-        return UIMenu(title: "Output Language", children: actions)
+
+        let translateLang = KeyboardSettings.translateLanguage
+        let translateActions = languages.filter { $0 != "Auto" }.map { language in
+            UIAction(title: language, state: language == translateLang ? .on : .off) { [weak self] _ in
+                guard let self else { return }
+                KeyboardSettings.sharedDefaults.set(language, forKey: KeyboardSettings.translateLanguageKey)
+                self.showStatus("Translate → \(self.languageCode(for: language))")
+            }
+        }
+
+        let rewriteMenu = UIMenu(
+            title: "Rewrite Language",
+            image: UIImage(systemName: "pencil"),
+            children: rewriteActions
+        )
+        let translateMenu = UIMenu(
+            title: "Translate To",
+            image: UIImage(systemName: "character.bubble"),
+            children: translateActions
+        )
+        return UIMenu(title: "", options: .displayInline, children: [rewriteMenu, translateMenu])
     }
 
     private func refineCurrentText(mode: RewriteMode) {
@@ -819,7 +843,7 @@ final class KeyboardViewController: UIInputViewController {
             return
         }
 
-        let targetLanguage = outputLanguage == "Auto" ? "English" : outputLanguage
+        let targetLanguage = KeyboardSettings.translateLanguage
         showStatus("Translating...")
         bannerDismissTask?.cancel()
         translationBanner.hide(animated: false)
