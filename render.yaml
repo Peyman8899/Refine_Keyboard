@@ -14,3 +14,5 @@ services:
         value: gpt-5.4-nano
       - key: REFINE_MAX_REQUESTS_PER_MINUTE
         value: "30"
+      - key: REFINE_APP_SECRET
+        sync: false

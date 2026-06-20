@@ -44,6 +44,7 @@ final class RewriteClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(KeyboardSettings.appSecret, forHTTPHeaderField: "X-App-Secret")
         request.timeoutInterval = 30
         request.httpBody = try JSONEncoder().encode(RewriteRequest(text: text, mode: mode.rawValue, language: language))
 

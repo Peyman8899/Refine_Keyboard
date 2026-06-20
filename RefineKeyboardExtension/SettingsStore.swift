@@ -6,6 +6,7 @@ enum KeyboardSettings {
     static let languageKey           = "rewriteLanguage"
     static let subscriptionActiveKey = "subscriptionActive"
     static let productionEndpoint    = "https://refinekeyboard-api.onrender.com/refine"
+    static let appSecret             = "rkp_f863dcf9d283f019826616eb9461bb20c258faf0"
 
     static var sharedDefaults: UserDefaults {
         UserDefaults(suiteName: appGroupID) ?? .standard
