@@ -26,7 +26,7 @@ def get_openai_client() -> OpenAI:
 
 class RefineRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
-    mode: Literal["Polish", "Warm", "Professional", "Shorter"] = "Polish"
+    mode: Literal["Polish", "Warm", "Professional", "Shorter", "Translate"] = "Polish"
     language: str = Field(default="Auto", max_length=80)
 
 
@@ -44,6 +44,7 @@ MODE_INSTRUCTIONS = {
     "Warm": "Make the message warmer, more natural, and kind without becoming overly formal.",
     "Professional": "Make the message clear, polished, and professional without sounding stiff.",
     "Shorter": "Make the message more concise while preserving the meaning.",
+    "Translate": "Translate the message into the target language. Preserve meaning, tone, and formatting exactly. Output only the translation.",
 }
 
 

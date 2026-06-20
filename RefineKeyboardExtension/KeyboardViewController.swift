@@ -26,6 +26,9 @@ final class KeyboardViewController: UIInputViewController {
     private var lastRewriteCharacterCount: Int?
     private let keyPreview = KeyPreviewView()
     private let impactGenerator = UIImpactFeedbackGenerator(style: .light)
+    private let translationBanner = TranslationBannerView()
+    private var bannerDismissTask: Task<Void, Never>?
+    private var lastTranslation: String?
 
     private static func dynamicColor(light: UIColor, dark: UIColor) -> UIColor {
         UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light }
@@ -127,10 +130,25 @@ final class KeyboardViewController: UIInputViewController {
             root.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -6)
         ])
 
+        let modeScroll = UIScrollView()
+        modeScroll.showsHorizontalScrollIndicator = false
+        modeScroll.alwaysBounceHorizontal = false
+        modeScroll.heightAnchor.constraint(equalToConstant: 36).isActive = true
+
         let modeRow = UIStackView()
         modeRow.axis = .horizontal
         modeRow.spacing = 4
-        modeRow.distribution = .fillEqually
+        modeRow.distribution = .fill
+        modeRow.translatesAutoresizingMaskIntoConstraints = false
+        modeScroll.addSubview(modeRow)
+
+        NSLayoutConstraint.activate([
+            modeRow.leadingAnchor.constraint(equalTo: modeScroll.contentLayoutGuide.leadingAnchor),
+            modeRow.trailingAnchor.constraint(equalTo: modeScroll.contentLayoutGuide.trailingAnchor),
+            modeRow.topAnchor.constraint(equalTo: modeScroll.contentLayoutGuide.topAnchor),
+            modeRow.bottomAnchor.constraint(equalTo: modeScroll.contentLayoutGuide.bottomAnchor),
+            modeRow.heightAnchor.constraint(equalTo: modeScroll.frameLayoutGuide.heightAnchor),
+        ])
 
         let language = makeActionButton(title: languageTitle())
         languageButton = language
@@ -142,16 +160,21 @@ final class KeyboardViewController: UIInputViewController {
             ("Refine", .polish),
             ("Warm", .warm),
             ("Professional", .professional),
-            ("Short", .shorter)
+            ("Short", .shorter),
+            ("Translate", .translate),
         ]
         actions.forEach { title, mode in
             let button = makeActionButton(title: title)
             addTapAction(to: button) { [weak self] in
-                self?.refineCurrentText(mode: mode)
+                if mode == .translate {
+                    self?.translateSelectedText()
+                } else {
+                    self?.refineCurrentText(mode: mode)
+                }
             }
             modeRow.addArrangedSubview(button)
         }
-        root.addArrangedSubview(modeRow)
+        root.addArrangedSubview(modeScroll)
 
         keyboardStack.axis = .vertical
         keyboardStack.spacing = 6
@@ -160,6 +183,22 @@ final class KeyboardViewController: UIInputViewController {
 
         keyPreview.keyFillColor = letterKeyBackground
         view.addSubview(keyPreview)
+
+        view.addSubview(translationBanner)
+        NSLayoutConstraint.activate([
+            translationBanner.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            translationBanner.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -8),
+            translationBanner.topAnchor.constraint(equalTo: view.topAnchor, constant: 4),
+        ])
+        translationBanner.onTap = { [weak self] in
+            guard let self else { return }
+            if let text = self.lastTranslation {
+                UIPasteboard.general.string = text
+                self.showStatus("Copied!")
+            }
+            self.bannerDismissTask?.cancel()
+            self.translationBanner.hide()
+        }
 
         renderKeyboard()
     }
@@ -475,14 +514,19 @@ final class KeyboardViewController: UIInputViewController {
         let button = makeKeyButton(title: title)
         button.titleLabel?.font = .systemFont(ofSize: 24, weight: .regular)
         letterButtons.append(button)
-        addCharacterAction(to: button) { [weak self, weak button] in
-            guard let self, let title = button?.configuration?.title else { return }
-            let useUppercase = self.isShifted || self.capsLocked
-            self.insertCharacter(useUppercase ? title.uppercased() : title.lowercased())
+        addCharacterAction(to: button) { [weak self] in
+            guard let self else { return }
+            let char = (self.isShifted || self.capsLocked)
+                ? String(character).uppercased()
+                : String(character).lowercased()
+            self.insertCharacter(char)
             if self.isShifted && !self.capsLocked {
                 self.isShifted = false
-                self.refreshLetterCasing()
-                self.updateShiftAppearance()
+                // Defer casing refresh so text insertion renders first
+                DispatchQueue.main.async { [weak self] in
+                    self?.refreshLetterCasing()
+                    self?.updateShiftAppearance()
+                }
             }
         }
         return button
@@ -490,16 +534,17 @@ final class KeyboardViewController: UIInputViewController {
 
     private func refreshLetterCasing() {
         letterButtons.forEach { button in
-            let title = button.configuration?.title ?? ""
-            button.configuration?.title = isShifted ? title.uppercased() : title.lowercased()
+            let current = button.title(for: .normal) ?? ""
+            button.setTitle(isShifted ? current.uppercased() : current.lowercased(), for: .normal)
         }
     }
 
     private func updateShiftAppearance() {
         guard let shiftButton else { return }
         let imageName = capsLocked ? "capslock.fill" : (isShifted ? "shift.fill" : "shift")
-        shiftButton.configuration?.image = UIImage(systemName: imageName)
-        shiftButton.configuration?.baseBackgroundColor = (isShifted || capsLocked) ? letterKeyBackground : specialKeyBackground
+        let symCfg = UIImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+        shiftButton.setImage(UIImage(systemName: imageName, withConfiguration: symCfg), for: .normal)
+        shiftButton.layer.backgroundColor = ((isShifted || capsLocked) ? letterKeyBackground : specialKeyBackground).cgColor
     }
 
     private func makeActionButton(title: String) -> UIButton {
@@ -523,48 +568,51 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func makeKeyButton(title: String, showsPreview: Bool = true) -> UIButton {
-        var configuration = UIButton.Configuration.filled()
-        configuration.title = title
-        configuration.baseBackgroundColor = letterKeyBackground
-        configuration.baseForegroundColor = .label
-        configuration.cornerStyle = .fixed
-        configuration.background.cornerRadius = 5
-        configuration.titleLineBreakMode = .byTruncatingTail
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 2, bottom: 0, trailing: 2)
-
-        let button = UIButton(configuration: configuration)
+        let button = UIButton(type: .custom)
+        button.setTitle(title, for: .normal)
+        button.setTitleColor(.label, for: .normal)
         button.titleLabel?.numberOfLines = 1
         button.titleLabel?.adjustsFontSizeToFitWidth = true
         button.titleLabel?.minimumScaleFactor = 0.55
         button.titleLabel?.lineBreakMode = .byTruncatingTail
+        button.layer.backgroundColor = letterKeyBackground.cgColor
+        button.layer.cornerRadius = 5
+        button.layer.masksToBounds = false
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOpacity = 0.2
+        button.layer.shadowOffset = CGSize(width: 0, height: 1)
+        button.layer.shadowRadius = 0.5
         button.heightAnchor.constraint(equalToConstant: 44).isActive = true
-        applyKeycapShadow(to: button)
-        addPressFeedback(to: button)
         if showsPreview {
             addKeyPreview(to: button)
+        } else {
+            addPressFeedback(to: button)
         }
         return button
     }
 
     private func makeSystemButton(title: String?, imageName: String? = nil) -> UIButton {
-        var configuration = UIButton.Configuration.filled()
-        configuration.title = title
-        configuration.baseBackgroundColor = specialKeyBackground
-        configuration.baseForegroundColor = .label
-        configuration.cornerStyle = .fixed
-        configuration.background.cornerRadius = 5
-        configuration.titleLineBreakMode = .byTruncatingTail
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4)
-        if let imageName {
-            configuration.image = UIImage(systemName: imageName)
+        let button = UIButton(type: .custom)
+        if let title {
+            button.setTitle(title, for: .normal)
+            button.setTitleColor(.label, for: .normal)
+            button.titleLabel?.font = .systemFont(ofSize: 16, weight: .regular)
+            button.titleLabel?.adjustsFontSizeToFitWidth = true
+            button.titleLabel?.minimumScaleFactor = 0.7
         }
-
-        let button = UIButton(configuration: configuration)
-        button.titleLabel?.font = .systemFont(ofSize: 18, weight: .regular)
-        button.titleLabel?.adjustsFontSizeToFitWidth = true
-        button.titleLabel?.minimumScaleFactor = 0.7
+        if let imageName {
+            let symCfg = UIImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+            button.setImage(UIImage(systemName: imageName, withConfiguration: symCfg), for: .normal)
+            button.tintColor = .label
+        }
+        button.layer.backgroundColor = specialKeyBackground.cgColor
+        button.layer.cornerRadius = 5
+        button.layer.masksToBounds = false
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOpacity = 0.2
+        button.layer.shadowOffset = CGSize(width: 0, height: 1)
+        button.layer.shadowRadius = 0.5
         button.heightAnchor.constraint(equalToConstant: 44).isActive = true
-        applyKeycapShadow(to: button)
         addPressFeedback(to: button)
         return button
     }
@@ -575,14 +623,6 @@ final class KeyboardViewController: UIInputViewController {
         button.titleLabel?.font = .systemFont(ofSize: 28, weight: .regular)
         button.heightAnchor.constraint(equalToConstant: 36).isActive = true
         return button
-    }
-
-    private func applyKeycapShadow(to button: UIButton) {
-        button.layer.shadowColor = UIColor.black.cgColor
-        button.layer.shadowOpacity = 0.2
-        button.layer.shadowOffset = CGSize(width: 0, height: 1)
-        button.layer.shadowRadius = 0.5
-        button.layer.masksToBounds = false
     }
 
     private func addTapAction(to button: UIButton, action: @escaping () -> Void) {
@@ -619,7 +659,7 @@ final class KeyboardViewController: UIInputViewController {
 
     private func addKeyPreview(to button: UIButton) {
         button.addAction(UIAction { [weak self, weak button] _ in
-            guard let self, let button, let title = button.configuration?.title, !title.isEmpty else { return }
+            guard let self, let button, let title = button.title(for: .normal), !title.isEmpty else { return }
             let frame = button.convert(button.bounds, to: self.view)
             self.keyPreview.show(character: title, above: frame, in: self.view)
         }, for: .touchDown)
@@ -632,12 +672,14 @@ final class KeyboardViewController: UIInputViewController {
     private func insertCharacter(_ text: String) {
         UIDevice.current.playInputClick()
         impactGenerator.impactOccurred()
+        impactGenerator.prepare()
         insertUserText(text)
     }
 
     private func deleteCharacter() {
         UIDevice.current.playInputClick()
         impactGenerator.impactOccurred()
+        impactGenerator.prepare()
         deleteUserText()
     }
 
@@ -753,6 +795,54 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
+    private func translateSelectedText() {
+        guard hasFullAccess else {
+            showStatus("Enable Full Access")
+            return
+        }
+        guard KeyboardSettings.isSubscriptionActive else {
+            showStatus("Open RefineKeyboard app to subscribe")
+            return
+        }
+
+        let selected = (textDocumentProxy.selectedText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selected.isEmpty else {
+            showStatus("Select text first")
+            return
+        }
+
+        let targetLanguage = outputLanguage == "Auto" ? "English" : outputLanguage
+        showStatus("Translating...")
+        bannerDismissTask?.cancel()
+        translationBanner.hide(animated: false)
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let translated = try await client.rewrite(text: selected, mode: .translate, language: targetLanguage)
+                await MainActor.run {
+                    self.lastTranslation = translated
+                    self.updateLanguageButtonTitle()
+                    self.showTranslation(translated, language: targetLanguage)
+                }
+            } catch {
+                await MainActor.run {
+                    self.showStatus(self.message(for: error))
+                }
+            }
+        }
+    }
+
+    private func showTranslation(_ text: String, language: String) {
+        bannerDismissTask?.cancel()
+        translationBanner.show(translation: text, language: language)
+        bannerDismissTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { self?.translationBanner.hide() }
+        }
+    }
+
     private func showStatus(_ message: String) {
         statusTask?.cancel()
         languageButton?.configuration?.title = message
@@ -795,4 +885,79 @@ final class KeyboardViewController: UIInputViewController {
 
 extension KeyboardViewController: UIInputViewAudioFeedback {
     var enableInputClicksWhenVisible: Bool { true }
+}
+
+final class TranslationBannerView: UIView {
+    var onTap: (() -> Void)?
+
+    private let headerLabel = UILabel()
+    private let bodyLabel = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        translatesAutoresizingMaskIntoConstraints = false
+        isHidden = true
+        alpha = 0
+
+        backgroundColor = UIColor(red: 0.10, green: 0.10, blue: 0.12, alpha: 0.95)
+        layer.cornerRadius = 12
+        layer.masksToBounds = true
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.25
+        layer.shadowOffset = CGSize(width: 0, height: 2)
+        layer.shadowRadius = 4
+
+        headerLabel.font = .systemFont(ofSize: 11, weight: .semibold)
+        headerLabel.textColor = UIColor(white: 1, alpha: 0.55)
+        headerLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        bodyLabel.font = .systemFont(ofSize: 15, weight: .regular)
+        bodyLabel.textColor = .white
+        bodyLabel.numberOfLines = 0
+        bodyLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let copyHint = UILabel()
+        copyHint.text = "Tap to copy"
+        copyHint.font = .systemFont(ofSize: 11, weight: .regular)
+        copyHint.textColor = UIColor(white: 1, alpha: 0.4)
+        copyHint.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = UIStackView(arrangedSubviews: [headerLabel, bodyLabel, copyHint])
+        stack.axis = .vertical
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+        ])
+
+        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func show(translation: String, language: String) {
+        headerLabel.text = "TRANSLATION → \(language.uppercased())"
+        bodyLabel.text = translation
+        isHidden = false
+        UIView.animate(withDuration: 0.2) { self.alpha = 1 }
+    }
+
+    func hide(animated: Bool = true) {
+        guard !isHidden else { return }
+        if animated {
+            UIView.animate(withDuration: 0.2, animations: { self.alpha = 0 }) { _ in
+                self.isHidden = true
+            }
+        } else {
+            alpha = 0
+            isHidden = true
+        }
+    }
+
+    @objc private func tapped() { onTap?() }
 }

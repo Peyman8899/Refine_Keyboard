@@ -5,6 +5,7 @@ enum RewriteMode: String, CaseIterable {
     case warm = "Warm"
     case professional = "Professional"
     case shorter = "Shorter"
+    case translate = "Translate"
 }
 
 struct RewriteRequest: Encodable {

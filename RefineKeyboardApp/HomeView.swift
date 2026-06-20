@@ -164,6 +164,19 @@ struct HomeView: View {
             } footer: {
                 Text("Leave blank to use the production endpoint.")
             }
+
+            Section {
+                Toggle(isOn: Binding(
+                    get: { AppSettings.sharedDefaults.bool(forKey: AppSettings.subscriptionActiveKey) },
+                    set: { AppSettings.sharedDefaults.set($0, forKey: AppSettings.subscriptionActiveKey) }
+                )) {
+                    Label("Simulate Pro Subscription", systemImage: "wrench.and.screwdriver")
+                }
+            } header: {
+                Text("Subscription Override")
+            } footer: {
+                Text("Force-unlocks AI features in the keyboard for local testing. Turn off to test the paywall flow.")
+            }
         }
     }
 }
