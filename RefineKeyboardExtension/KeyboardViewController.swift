@@ -29,6 +29,8 @@ final class KeyboardViewController: UIInputViewController {
     private let translationBanner = TranslationBannerView()
     private var bannerDismissTask: Task<Void, Never>?
     private var lastTranslation: String?
+    private var currentTone: RewriteMode = .polish
+    private var toneButton: UIButton?
 
     private static func dynamicColor(light: UIColor, dark: UIColor) -> UIColor {
         UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light }
@@ -130,51 +132,36 @@ final class KeyboardViewController: UIInputViewController {
             root.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -6)
         ])
 
-        let modeScroll = UIScrollView()
-        modeScroll.showsHorizontalScrollIndicator = false
-        modeScroll.alwaysBounceHorizontal = false
-        modeScroll.heightAnchor.constraint(equalToConstant: 36).isActive = true
-
         let modeRow = UIStackView()
         modeRow.axis = .horizontal
-        modeRow.spacing = 4
-        modeRow.distribution = .fill
-        modeRow.translatesAutoresizingMaskIntoConstraints = false
-        modeScroll.addSubview(modeRow)
+        modeRow.spacing = 6
+        modeRow.distribution = .fillEqually
 
-        NSLayoutConstraint.activate([
-            modeRow.leadingAnchor.constraint(equalTo: modeScroll.contentLayoutGuide.leadingAnchor),
-            modeRow.trailingAnchor.constraint(equalTo: modeScroll.contentLayoutGuide.trailingAnchor),
-            modeRow.topAnchor.constraint(equalTo: modeScroll.contentLayoutGuide.topAnchor),
-            modeRow.bottomAnchor.constraint(equalTo: modeScroll.contentLayoutGuide.bottomAnchor),
-            modeRow.heightAnchor.constraint(equalTo: modeScroll.frameLayoutGuide.heightAnchor),
-        ])
-
-        let language = makeActionButton(title: languageTitle())
+        // Language: globe + 2-letter code, tap → menu
+        let language = makeActionButton(title: languageDisplayTitle(), imageName: "globe")
         languageButton = language
         language.menu = makeLanguageMenu()
         language.showsMenuAsPrimaryAction = true
         modeRow.addArrangedSubview(language)
 
-        let actions: [(String, RewriteMode)] = [
-            ("Refine", .polish),
-            ("Warm", .warm),
-            ("Professional", .professional),
-            ("Short", .shorter),
-            ("Translate", .translate),
-        ]
-        actions.forEach { title, mode in
-            let button = makeActionButton(title: title)
-            addTapAction(to: button) { [weak self] in
-                if mode == .translate {
-                    self?.translateSelectedText()
-                } else {
-                    self?.refineCurrentText(mode: mode)
-                }
-            }
-            modeRow.addArrangedSubview(button)
+        // Tone: icon + name, tap → apply current tone, hold → pick tone
+        let tone = makeActionButton(title: toneName(for: currentTone), imageName: toneIconName(for: currentTone))
+        toneButton = tone
+        tone.menu = makeToneMenu()
+        addTapAction(to: tone) { [weak self] in
+            guard let self else { return }
+            self.refineCurrentText(mode: self.currentTone)
         }
-        root.addArrangedSubview(modeScroll)
+        modeRow.addArrangedSubview(tone)
+
+        // Translate: clipboard → banner
+        let translate = makeActionButton(title: "Translate", imageName: "character.bubble")
+        addTapAction(to: translate) { [weak self] in
+            self?.translateSelectedText()
+        }
+        modeRow.addArrangedSubview(translate)
+
+        root.addArrangedSubview(modeRow)
 
         keyboardStack.axis = .vertical
         keyboardStack.spacing = 6
@@ -547,7 +534,7 @@ final class KeyboardViewController: UIInputViewController {
         shiftButton.layer.backgroundColor = ((isShifted || capsLocked) ? letterKeyBackground : specialKeyBackground).cgColor
     }
 
-    private func makeActionButton(title: String) -> UIButton {
+    private func makeActionButton(title: String, imageName: String? = nil) -> UIButton {
         var configuration = UIButton.Configuration.filled()
         configuration.title = title
         configuration.baseBackgroundColor = actionPillBackground
@@ -557,8 +544,14 @@ final class KeyboardViewController: UIInputViewController {
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
         configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
             var out = incoming
-            out.font = UIFont.systemFont(ofSize: 13, weight: .medium)
+            out.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
             return out
+        }
+        if let imageName {
+            let symCfg = UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+            configuration.image = UIImage(systemName: imageName, withConfiguration: symCfg)
+            configuration.imagePlacement = .leading
+            configuration.imagePadding = 4
         }
 
         let button = UIButton(configuration: configuration)
@@ -706,13 +699,62 @@ final class KeyboardViewController: UIInputViewController {
         }, for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
     }
 
-    private func languageTitle() -> String {
-        outputLanguage == "Auto" ? "Auto" : outputLanguage
+    private func languageDisplayTitle() -> String {
+        outputLanguage == "Auto" ? "Auto" : languageCode(for: outputLanguage)
     }
 
     private func updateLanguageButtonTitle() {
-        languageButton?.configuration?.title = languageTitle()
+        languageButton?.configuration?.title = languageDisplayTitle()
         languageButton?.menu = makeLanguageMenu()
+    }
+
+    private func toneIconName(for mode: RewriteMode) -> String {
+        switch mode {
+        case .polish:       return "sparkles"
+        case .warm:         return "heart.fill"
+        case .professional: return "briefcase.fill"
+        case .shorter:      return "scissors"
+        case .translate:    return "character.bubble"
+        }
+    }
+
+    private func toneName(for mode: RewriteMode) -> String {
+        switch mode {
+        case .polish:       return "Refine"
+        case .warm:         return "Warm"
+        case .professional: return "Professional"
+        case .shorter:      return "Short"
+        case .translate:    return "Translate"
+        }
+    }
+
+    private func updateToneButton() {
+        let symCfg = UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        toneButton?.configuration?.image = UIImage(systemName: toneIconName(for: currentTone), withConfiguration: symCfg)
+        toneButton?.configuration?.title = toneName(for: currentTone)
+        toneButton?.menu = makeToneMenu()
+    }
+
+    private func makeToneMenu() -> UIMenu {
+        let tones: [(RewriteMode, String, String)] = [
+            (.polish,       "Refine",       "sparkles"),
+            (.warm,         "Warm",         "heart.fill"),
+            (.professional, "Professional", "briefcase.fill"),
+            (.shorter,      "Short",        "scissors"),
+        ]
+        let actions = tones.map { mode, name, icon in
+            UIAction(
+                title: name,
+                image: UIImage(systemName: icon),
+                state: mode == currentTone ? .on : .off
+            ) { [weak self] _ in
+                guard let self else { return }
+                self.currentTone = mode
+                self.updateToneButton()
+                self.refineCurrentText(mode: mode)
+            }
+        }
+        return UIMenu(title: "Choose Tone", children: actions)
     }
 
     private func languageCode(for language: String) -> String {
