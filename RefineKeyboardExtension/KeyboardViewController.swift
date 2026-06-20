@@ -31,6 +31,7 @@ final class KeyboardViewController: UIInputViewController {
     private var lastTranslation: String?
     private var currentTone: RewriteMode = .polish
     private var toneButton: UIButton?
+    private var translateLangButton: UIButton?
 
     private static func dynamicColor(light: UIColor, dark: UIColor) -> UIColor {
         UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light }
@@ -102,7 +103,7 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        keyboardHeightConstraint = view.heightAnchor.constraint(equalToConstant: 258)
+        keyboardHeightConstraint = view.heightAnchor.constraint(equalToConstant: 296)
         keyboardHeightConstraint?.priority = .defaultHigh
         keyboardHeightConstraint?.isActive = true
         impactGenerator.prepare()
@@ -132,36 +133,46 @@ final class KeyboardViewController: UIInputViewController {
             root.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -6)
         ])
 
-        let modeRow = UIStackView()
-        modeRow.axis = .horizontal
-        modeRow.spacing = 6
-        modeRow.distribution = .fillEqually
+        let actionArea = UIStackView()
+        actionArea.axis = .vertical
+        actionArea.spacing = 6
 
-        // Language: globe + 2-letter code, tap → menu
-        let language = makeActionButton(title: languageDisplayTitle(), imageName: "globe")
-        languageButton = language
-        language.menu = makeLanguageMenu()
-        language.showsMenuAsPrimaryAction = true
-        modeRow.addArrangedSubview(language)
+        // ── Row 1: Rewrite ──────────────────────────────────────────
+        let rewriteRow = makeActionRow()
 
-        // Tone: icon + name, tap → apply current tone, hold → pick tone
-        let tone = makeActionButton(title: toneName(for: currentTone), imageName: toneIconName(for: currentTone))
-        toneButton = tone
-        tone.menu = makeToneMenu()
-        addTapAction(to: tone) { [weak self] in
+        let langBtn = makeLanguagePill(title: languageDisplayTitle(), imageName: "globe")
+        languageButton = langBtn
+        langBtn.menu = makeRewriteLanguageMenu()
+        langBtn.showsMenuAsPrimaryAction = true
+        rewriteRow.addArrangedSubview(langBtn)
+
+        let toneBtn = makeActionPill(title: toneName(for: currentTone), imageName: toneIconName(for: currentTone))
+        toneButton = toneBtn
+        toneBtn.menu = makeToneMenu()
+        addTapAction(to: toneBtn) { [weak self] in
             guard let self else { return }
             self.refineCurrentText(mode: self.currentTone)
         }
-        modeRow.addArrangedSubview(tone)
+        rewriteRow.addArrangedSubview(toneBtn)
 
-        // Translate: clipboard → banner
-        let translate = makeActionButton(title: "Translate", imageName: "character.bubble")
-        addTapAction(to: translate) { [weak self] in
+        // ── Row 2: Translate ─────────────────────────────────────────
+        let translateRow = makeActionRow()
+
+        let trLangBtn = makeLanguagePill(title: translateLanguageDisplayTitle(), imageName: "arrow.right.circle.fill")
+        translateLangButton = trLangBtn
+        trLangBtn.menu = makeTranslateLanguageMenu()
+        trLangBtn.showsMenuAsPrimaryAction = true
+        translateRow.addArrangedSubview(trLangBtn)
+
+        let translateBtn = makeActionPill(title: "Translate", imageName: "character.bubble.fill")
+        addTapAction(to: translateBtn) { [weak self] in
             self?.translateSelectedText()
         }
-        modeRow.addArrangedSubview(translate)
+        translateRow.addArrangedSubview(translateBtn)
 
-        root.addArrangedSubview(modeRow)
+        actionArea.addArrangedSubview(rewriteRow)
+        actionArea.addArrangedSubview(translateRow)
+        root.addArrangedSubview(actionArea)
 
         keyboardStack.axis = .vertical
         keyboardStack.spacing = 6
@@ -534,6 +545,28 @@ final class KeyboardViewController: UIInputViewController {
         shiftButton.layer.backgroundColor = ((isShifted || capsLocked) ? letterKeyBackground : specialKeyBackground).cgColor
     }
 
+    private func makeActionRow() -> UIStackView {
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.spacing = 6
+        row.distribution = .fill
+        return row
+    }
+
+    // Compact left pill — shows language code, fixed width
+    private func makeLanguagePill(title: String, imageName: String) -> UIButton {
+        let button = makeActionButton(title: title, imageName: imageName)
+        button.widthAnchor.constraint(equalToConstant: 78).isActive = true
+        return button
+    }
+
+    // Expanding right pill — action button fills remaining width
+    private func makeActionPill(title: String, imageName: String) -> UIButton {
+        let button = makeActionButton(title: title, imageName: imageName)
+        button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return button
+    }
+
     private func makeActionButton(title: String, imageName: String? = nil) -> UIButton {
         var configuration = UIButton.Configuration.filled()
         configuration.title = title
@@ -703,9 +736,18 @@ final class KeyboardViewController: UIInputViewController {
         outputLanguage == "Auto" ? "Auto" : languageCode(for: outputLanguage)
     }
 
+    private func translateLanguageDisplayTitle() -> String {
+        languageCode(for: KeyboardSettings.translateLanguage)
+    }
+
     private func updateLanguageButtonTitle() {
         languageButton?.configuration?.title = languageDisplayTitle()
-        languageButton?.menu = makeLanguageMenu()
+        languageButton?.menu = makeRewriteLanguageMenu()
+    }
+
+    private func updateTranslateLangButton() {
+        translateLangButton?.configuration?.title = translateLanguageDisplayTitle()
+        translateLangButton?.menu = makeTranslateLanguageMenu()
     }
 
     private func toneIconName(for mode: RewriteMode) -> String {
@@ -782,8 +824,8 @@ final class KeyboardViewController: UIInputViewController {
         return codes[language] ?? String(language.prefix(2)).uppercased()
     }
 
-    private func makeLanguageMenu() -> UIMenu {
-        let rewriteActions = languages.map { language in
+    private func makeRewriteLanguageMenu() -> UIMenu {
+        let actions = languages.map { language in
             UIAction(title: language, state: language == outputLanguage ? .on : .off) { [weak self] _ in
                 guard let self else { return }
                 self.outputLanguage = language
@@ -792,27 +834,20 @@ final class KeyboardViewController: UIInputViewController {
                 self.showStatus(language == "Auto" ? "Rewrite: Auto" : "Rewrite → \(self.languageCode(for: language))")
             }
         }
+        return UIMenu(title: "Rewrite Language", children: actions)
+    }
 
-        let translateLang = KeyboardSettings.translateLanguage
-        let translateActions = languages.filter { $0 != "Auto" }.map { language in
-            UIAction(title: language, state: language == translateLang ? .on : .off) { [weak self] _ in
+    private func makeTranslateLanguageMenu() -> UIMenu {
+        let current = KeyboardSettings.translateLanguage
+        let actions = languages.filter { $0 != "Auto" }.map { language in
+            UIAction(title: language, state: language == current ? .on : .off) { [weak self] _ in
                 guard let self else { return }
                 KeyboardSettings.sharedDefaults.set(language, forKey: KeyboardSettings.translateLanguageKey)
+                self.updateTranslateLangButton()
                 self.showStatus("Translate → \(self.languageCode(for: language))")
             }
         }
-
-        let rewriteMenu = UIMenu(
-            title: "Rewrite Language",
-            image: UIImage(systemName: "pencil"),
-            children: rewriteActions
-        )
-        let translateMenu = UIMenu(
-            title: "Translate To",
-            image: UIImage(systemName: "character.bubble"),
-            children: translateActions
-        )
-        return UIMenu(title: "", options: .displayInline, children: [rewriteMenu, translateMenu])
+        return UIMenu(title: "Translate To", children: actions)
     }
 
     private func refineCurrentText(mode: RewriteMode) {
