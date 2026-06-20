@@ -805,9 +805,17 @@ final class KeyboardViewController: UIInputViewController {
             return
         }
 
-        let selected = (textDocumentProxy.selectedText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !selected.isEmpty else {
-            showStatus("Select text first")
+        // Selected text in input field takes priority; clipboard is the fallback
+        // (keyboard extensions cannot read selections from message bubbles)
+        let text = [
+            textDocumentProxy.selectedText,
+            UIPasteboard.general.string
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty }
+
+        guard let source = text else {
+            showStatus("Copy a message first")
             return
         }
 
@@ -819,7 +827,7 @@ final class KeyboardViewController: UIInputViewController {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let translated = try await client.rewrite(text: selected, mode: .translate, language: targetLanguage)
+                let translated = try await client.rewrite(text: source, mode: .translate, language: targetLanguage)
                 await MainActor.run {
                     self.lastTranslation = translated
                     self.updateLanguageButtonTitle()
