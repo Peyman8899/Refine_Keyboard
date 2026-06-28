@@ -221,8 +221,8 @@ final class KeyboardViewController: UIInputViewController {
         actionRow.addArrangedSubview(aiBox)
         actionRow.addArrangedSubview(box1)
         actionRow.addArrangedSubview(box2)
-        // Translate box gets more space than the refine box
-        box1.widthAnchor.constraint(equalTo: box2.widthAnchor, multiplier: 0.8).isActive = true
+        // Refine box slightly wider than translate
+        box2.widthAnchor.constraint(equalTo: box1.widthAnchor, multiplier: 0.88).isActive = true
         root.addArrangedSubview(actionRow)
 
         keyboardStack.axis = .vertical
