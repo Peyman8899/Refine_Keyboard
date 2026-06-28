@@ -36,9 +36,11 @@ class RefineResponse(BaseModel):
     text: str
 
 
-SYSTEM_PROMPT = """You rewrite user-written messages.
-Return only the rewritten message, with no quotes, labels, or explanation.
-Preserve the user's meaning and do not invent facts."""
+SYSTEM_PROMPT = """You are a precise text rewriter. You receive a style/task instruction and a message.
+Output ONLY the rewritten message — nothing else.
+Never repeat or reference the instruction.
+Never add labels, headers, quotes, preamble, or explanations.
+Start your response with the first word of the rewritten message."""
 
 
 MODE_INSTRUCTIONS = {
@@ -102,23 +104,27 @@ def refine(payload: RefineRequest, request: Request) -> RefineResponse:
     check_app_secret(request)
     check_rate_limit(request)
 
+    language_instruction = (
+        "Same language as the input."
+        if payload.language == "Auto"
+        else f"{payload.language}."
+    )
+
     if payload.mode == "Custom":
         if not payload.custom_instruction.strip():
             raise HTTPException(status_code=400, detail="custom_instruction is required for Custom mode")
-        task_instruction = f"Rewrite following this specific instruction: {payload.custom_instruction}"
+        prompt = (
+            f"Style/tone: {payload.custom_instruction.strip()}\n"
+            f"Output language: {language_instruction}\n\n"
+            f"Text to rewrite:\n{payload.text}"
+        )
     else:
         task_instruction = MODE_INSTRUCTIONS[payload.mode]
-
-    language_instruction = (
-        "Keep the output in the same language as the input."
-        if payload.language == "Auto"
-        else f"Write the output in {payload.language}."
-    )
-    prompt = (
-        f"Rewrite task: {task_instruction}\n"
-        f"Language: {language_instruction}\n\n"
-        f"Message:\n{payload.text}"
-    )
+        prompt = (
+            f"Task: {task_instruction}\n"
+            f"Output language: {language_instruction}\n\n"
+            f"Text to rewrite:\n{payload.text}"
+        )
 
     response = get_openai_client().responses.create(
         model=os.getenv("OPENAI_MODEL", "gpt-5.4-nano"),
