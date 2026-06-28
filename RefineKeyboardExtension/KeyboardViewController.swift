@@ -514,21 +514,25 @@ final class KeyboardViewController: UIInputViewController {
             self.renderKeyboard()
         }
         reviewView.onPlayEN = { [weak self] in
-            guard let self, !self.aiRefinedText.isEmpty else { return }
+            guard let self else { return }
+            let textToSpeak = self.aiRefinedText.isEmpty ? self.aiOriginalText : self.aiRefinedText
+            guard !textToSpeak.isEmpty else { return }
             if self.currentSpeechTarget == .english && self.audioPlayer?.isPlaying == true {
                 self.stopSpeaking()
                 self.currentAIReviewView?.setPlayingEN(false)
             } else {
                 self.stopSpeaking()
                 self.currentAIReviewView?.setPlayingEN(true)
-                self.speakWithAPI(self.aiRefinedText, target: .english) { [weak self] in
+                self.speakWithAPI(textToSpeak, target: .english) { [weak self] in
                     self?.currentSpeechTarget = nil
                     self?.currentAIReviewView?.setPlayingEN(false)
                 }
             }
         }
         reviewView.onPlayTarget = { [weak self] in
-            guard let self, !self.aiRefinedText.isEmpty else { return }
+            guard let self else { return }
+            let textToSpeak = self.aiRefinedText.isEmpty ? self.aiOriginalText : self.aiRefinedText
+            guard !textToSpeak.isEmpty else { return }
             if self.currentSpeechTarget == .target && self.audioPlayer?.isPlaying == true {
                 self.stopSpeaking()
                 self.currentAIReviewView?.setPlayingTarget(false)
@@ -553,7 +557,7 @@ final class KeyboardViewController: UIInputViewController {
                     guard let self else { return }
                     do {
                         let translated = try await self.client.rewrite(
-                            text: self.aiRefinedText, mode: .translate, language: targetLang,
+                            text: textToSpeak, mode: .translate, language: targetLang,
                             customInstruction: "")
                         await MainActor.run {
                             self.aiTranslatedText = translated
@@ -1690,6 +1694,7 @@ final class AIReviewView: UIView {
     var onSavedToneSelected: ((String) -> Void)?
 
     var currentTone: RewriteMode = .polish { didSet { updateToneButtons() } }
+    var toneHighlightEnabled: Bool = true { didSet { updateToneButtons() } }
 
     private let diffTextView     = UITextView()
     private let loadingLabel     = UILabel()
@@ -1908,6 +1913,7 @@ final class AIReviewView: UIView {
             diffTextView.attributedText = nil
             setActionsEnabled(false)
         } else {
+            toneHighlightEnabled = true
             loadingLabel.isHidden = true
             diffTextView.attributedText = buildDiff(from: original, to: refined)
             setActionsEnabled(true)
@@ -1923,7 +1929,10 @@ final class AIReviewView: UIView {
             .foregroundColor: UIColor.label
         ], range: range)
         diffTextView.attributedText = attrs
-        // Keep insert/play disabled — user must pick a tone first
+        toneHighlightEnabled = false
+        playENBtn.isEnabled = true
+        playTargetBtn.isEnabled = true
+        // Insert stays disabled until a tone produces a refined result
     }
 
     func setLoading(_ loading: Bool) {
@@ -2085,13 +2094,13 @@ final class AIReviewView: UIView {
 
     private func updateToneButtons() {
         for (mode, btn) in toneButtonMap {
-            let on = mode == currentTone
+            let on = toneHighlightEnabled && mode == currentTone
             btn.layer.backgroundColor = on
                 ? UIColor.systemBlue.withAlphaComponent(0.18).cgColor
                 : UIColor.secondarySystemFill.cgColor
             btn.setTitleColor(on ? .systemBlue : .secondaryLabel, for: .normal)
         }
-        let customOn = currentTone == .custom
+        let customOn = toneHighlightEnabled && currentTone == .custom
         customBtn.backgroundColor = customOn
             ? UIColor.systemBlue.withAlphaComponent(0.14)
             : UIColor.secondarySystemFill
