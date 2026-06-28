@@ -26,8 +26,10 @@ def get_openai_client() -> OpenAI:
 
 class RefineRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
-    mode: Literal["Polish", "Warm", "Professional", "Shorter", "Translate"] = "Polish"
+    mode: Literal["Polish", "Warm", "Professional", "Shorter", "Translate",
+                  "Grammar", "Flirty", "Street", "Funny", "Custom"] = "Polish"
     language: str = Field(default="Auto", max_length=80)
+    custom_instruction: str = Field(default="", max_length=500)
 
 
 class RefineResponse(BaseModel):
@@ -45,6 +47,11 @@ MODE_INSTRUCTIONS = {
     "Professional": "Make the message clear, polished, and professional without sounding stiff.",
     "Shorter": "Make the message more concise while preserving the meaning.",
     "Translate": "Translate the message into the target language. Preserve meaning, tone, and formatting exactly. Output only the translation.",
+    "Grammar": "Correct only grammar errors, spelling mistakes, and punctuation (commas, periods, apostrophes, capitalization). Preserve the exact wording and tone — only fix what is grammatically wrong.",
+    "Flirty": "Rewrite in a playful, flirtatious, and charming tone. Keep it fun, light, and engaging — perfect for dating and romantic conversations.",
+    "Street": "Rewrite in a casual cool street style using modern urban slang. Sound confident and authentic, like someone who is naturally trendy. Keep it real.",
+    "Funny": "Rewrite to be witty and funny while keeping the core message. Add humor, a clever twist, or playful energy without being offensive.",
+    "Custom": "",  # handled separately using custom_instruction
 }
 
 
@@ -95,13 +102,20 @@ def refine(payload: RefineRequest, request: Request) -> RefineResponse:
     check_app_secret(request)
     check_rate_limit(request)
 
+    if payload.mode == "Custom":
+        if not payload.custom_instruction.strip():
+            raise HTTPException(status_code=400, detail="custom_instruction is required for Custom mode")
+        task_instruction = f"Rewrite following this specific instruction: {payload.custom_instruction}"
+    else:
+        task_instruction = MODE_INSTRUCTIONS[payload.mode]
+
     language_instruction = (
         "Keep the output in the same language as the input."
         if payload.language == "Auto"
         else f"Write the output in {payload.language}."
     )
     prompt = (
-        f"Rewrite task: {MODE_INSTRUCTIONS[payload.mode]}\n"
+        f"Rewrite task: {task_instruction}\n"
         f"Language: {language_instruction}\n\n"
         f"Message:\n{payload.text}"
     )
