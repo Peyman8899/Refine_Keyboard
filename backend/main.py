@@ -3,7 +3,7 @@ import time
 from collections import defaultdict, deque
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
@@ -112,10 +112,9 @@ def refine(payload: RefineRequest, request: Request) -> RefineResponse:
     )
 
     if payload.mode == "Custom":
-        if not payload.custom_instruction.strip():
-            raise HTTPException(status_code=400, detail="custom_instruction is required for Custom mode")
+        instruction = payload.custom_instruction.strip() or "Rewrite in a creative and natural style."
         prompt = (
-            f"Style/tone: {payload.custom_instruction.strip()}\n"
+            f"Style/tone: {instruction}\n"
             f"Output language: {language_instruction}\n\n"
             f"Text to rewrite:\n{payload.text}"
         )
@@ -139,3 +138,20 @@ def refine(payload: RefineRequest, request: Request) -> RefineResponse:
         raise HTTPException(status_code=502, detail="Model returned an empty rewrite")
 
     return RefineResponse(text=refined)
+
+
+class SpeakRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=4096)
+    voice: str = Field(default="nova")
+
+
+@app.post("/speak")
+def speak_text(payload: SpeakRequest, request: Request) -> Response:
+    check_app_secret(request)
+    check_rate_limit(request)
+    audio = get_openai_client().audio.speech.create(
+        model="tts-1",
+        voice=payload.voice,
+        input=payload.text,
+    )
+    return Response(content=audio.content, media_type="audio/mpeg")
