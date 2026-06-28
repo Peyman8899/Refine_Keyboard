@@ -36,11 +36,12 @@ class RefineResponse(BaseModel):
     text: str
 
 
-SYSTEM_PROMPT = """You are a precise text rewriter. You receive a style/task instruction and a message.
-Output ONLY the rewritten message — nothing else.
-Never repeat or reference the instruction.
-Never add labels, headers, quotes, preamble, or explanations.
-Start your response with the first word of the rewritten message."""
+SYSTEM_PROMPT = """You are a precise text rewriter that produces natural, human-sounding output.
+Output ONLY the rewritten message, starting directly with its first word.
+Never use bullet points, dashes, numbered lists, or any markdown formatting.
+Never add preamble, labels, headers, quotes, or explanations.
+Never reference or echo the rewriting instruction.
+Write in flowing natural prose that sounds like a real person wrote it — not like AI output."""
 
 
 MODE_INSTRUCTIONS = {
