@@ -204,19 +204,16 @@ final class KeyboardViewController: UIInputViewController {
         }, for: .touchUpInside)
 
         let (box2, trLangBtn2, trBtn2) = makeBox(
-            langIcon: "arrow.right",
+            langIcon: "arrow.right.circle.fill",
             langTitle: translateLanguageDisplayTitle(),
             actionIcon: "character.bubble.fill",
             actionTitle: "Translate",
-            showsChevron: false,
-            langBtnWidth: 50
+            showsChevron: false
         )
         translateLangButton = trLangBtn2
         trLangBtn2.menu = makeTranslateLanguageMenu()
         trLangBtn2.showsMenuAsPrimaryAction = true
         translateButton = trBtn2
-        trBtn2.tintColor = .systemBlue
-        trBtn2.setTitleColor(.systemBlue, for: .normal)
         trBtn2.addAction(UIAction { [weak self] _ in
             self?.translateSelectedText()
         }, for: .touchUpInside)
@@ -224,6 +221,8 @@ final class KeyboardViewController: UIInputViewController {
         actionRow.addArrangedSubview(aiBox)
         actionRow.addArrangedSubview(box1)
         actionRow.addArrangedSubview(box2)
+        // Translate box gets more space than the refine box
+        box1.widthAnchor.constraint(equalTo: box2.widthAnchor, multiplier: 0.8).isActive = true
         root.addArrangedSubview(actionRow)
 
         keyboardStack.axis = .vertical
