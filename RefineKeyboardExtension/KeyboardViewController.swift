@@ -500,15 +500,17 @@ final class KeyboardViewController: UIInputViewController {
             self.runAIRefine(tone: tone, customInstruction: customInstruction)
         }
         reviewView.onInsert = { [weak self] in
-            guard let self, !self.aiRefinedText.isEmpty else { return }
+            guard let self else { return }
             self.stopSpeaking()
+            let textToInsert = self.aiRefinedText.isEmpty ? self.aiOriginalText : self.aiRefinedText
+            guard !textToInsert.isEmpty else { return }
             if self.aiUsingSelection {
-                self.textDocumentProxy.insertText(self.aiRefinedText)
+                self.textDocumentProxy.insertText(textToInsert)
                 self.lastRewriteCharacterCount = nil
             } else {
                 self.replaceCurrentDraft(contextBeforeInput: self.aiContextBefore,
                                          contextAfterInput: self.aiContextAfter,
-                                         refined: self.aiRefinedText)
+                                         refined: textToInsert)
             }
             self.keyboardMode = .letters
             self.renderKeyboard()
@@ -1930,9 +1932,9 @@ final class AIReviewView: UIView {
         ], range: range)
         diffTextView.attributedText = attrs
         toneHighlightEnabled = false
+        insertBtn.isEnabled = true
         playENBtn.isEnabled = true
         playTargetBtn.isEnabled = true
-        // Insert stays disabled until a tone produces a refined result
     }
 
     func setLoading(_ loading: Bool) {
