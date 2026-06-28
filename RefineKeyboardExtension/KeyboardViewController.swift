@@ -1075,7 +1075,8 @@ final class KeyboardViewController: UIInputViewController {
             sep.widthAnchor.constraint(equalToConstant: 0.5),
 
             actionBtn.leadingAnchor.constraint(equalTo: sep.trailingAnchor),
-            actionBtn.trailingAnchor.constraint(equalTo: box.trailingAnchor),
+            actionBtn.trailingAnchor.constraint(equalTo: box.trailingAnchor,
+                                                constant: showsChevron ? -20 : 0),
             actionBtn.topAnchor.constraint(equalTo: box.topAnchor),
             actionBtn.bottomAnchor.constraint(equalTo: box.bottomAnchor),
         ])
