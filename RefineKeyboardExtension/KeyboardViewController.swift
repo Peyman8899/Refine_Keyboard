@@ -204,16 +204,19 @@ final class KeyboardViewController: UIInputViewController {
         }, for: .touchUpInside)
 
         let (box2, trLangBtn2, trBtn2) = makeBox(
-            langIcon: "arrow.right.circle.fill",
+            langIcon: "arrow.right",
             langTitle: translateLanguageDisplayTitle(),
             actionIcon: "character.bubble.fill",
             actionTitle: "Translate",
-            showsChevron: false
+            showsChevron: false,
+            langBtnWidth: 50
         )
         translateLangButton = trLangBtn2
         trLangBtn2.menu = makeTranslateLanguageMenu()
         trLangBtn2.showsMenuAsPrimaryAction = true
         translateButton = trBtn2
+        trBtn2.tintColor = .systemBlue
+        trBtn2.setTitleColor(.systemBlue, for: .normal)
         trBtn2.addAction(UIAction { [weak self] _ in
             self?.translateSelectedText()
         }, for: .touchUpInside)
@@ -1023,7 +1026,8 @@ final class KeyboardViewController: UIInputViewController {
         langTitle: String,
         actionIcon: String,
         actionTitle: String,
-        showsChevron: Bool
+        showsChevron: Bool,
+        langBtnWidth: CGFloat = 68
     ) -> (container: UIView, langBtn: UIButton, actionBtn: UIButton) {
         let box = UIView()
         box.backgroundColor = actionPillBackground
@@ -1062,10 +1066,10 @@ final class KeyboardViewController: UIInputViewController {
         box.addSubview(actionBtn)
 
         NSLayoutConstraint.activate([
-            langBtn.leadingAnchor.constraint(equalTo: box.leadingAnchor),
+            langBtn.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 4),
             langBtn.topAnchor.constraint(equalTo: box.topAnchor),
             langBtn.bottomAnchor.constraint(equalTo: box.bottomAnchor),
-            langBtn.widthAnchor.constraint(equalToConstant: 68),
+            langBtn.widthAnchor.constraint(equalToConstant: langBtnWidth),
 
             sep.leadingAnchor.constraint(equalTo: langBtn.trailingAnchor),
             sep.centerYAnchor.constraint(equalTo: box.centerYAnchor),
@@ -1301,7 +1305,7 @@ final class KeyboardViewController: UIInputViewController {
         case .translate:    return "character.bubble"
         case .grammar:      return "checkmark.circle"
         case .flirty:       return "face.smiling"
-        case .street:       return "bolt.fill"
+        case .street:       return "flame.fill"
         case .funny:        return "theatermasks"
         case .custom:       return "pencil"
         }
@@ -1316,7 +1320,7 @@ final class KeyboardViewController: UIInputViewController {
         case .translate:    return "Translate"
         case .grammar:      return "Grammar"
         case .flirty:       return "Flirty"
-        case .street:       return "Street"
+        case .street:       return "Vibe"
         case .funny:        return "Funny"
         case .custom:       return "Custom"
         }
@@ -1741,7 +1745,7 @@ final class AIReviewView: UIView {
         ]
         let row2Tones: [(RewriteMode, String)] = [
             (.shorter, "✂️ Short"), (.flirty, "😍 Flirty"),
-            (.street, "😎 Street"),  (.funny, "😂 Funny")
+            (.street, "🔥 Vibe"),   (.funny, "😂 Funny")
         ]
 
         func makeToneRow(_ items: [(RewriteMode, String)]) -> UIStackView {

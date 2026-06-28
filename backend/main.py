@@ -27,7 +27,7 @@ def get_openai_client() -> OpenAI:
 class RefineRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
     mode: Literal["Polish", "Warm", "Professional", "Shorter", "Translate",
-                  "Grammar", "Flirty", "Street", "Funny", "Custom"] = "Polish"
+                  "Grammar", "Flirty", "Vibe", "Funny", "Custom"] = "Polish"
     language: str = Field(default="Auto", max_length=80)
     custom_instruction: str = Field(default="", max_length=500)
 
@@ -37,23 +37,51 @@ class RefineResponse(BaseModel):
 
 
 SYSTEM_PROMPT = """You are a precise text rewriter that produces natural, human-sounding output.
-Output ONLY the rewritten message, starting directly with its first word.
+Output ONLY the rewritten text, starting directly with its first word.
 Never use bullet points, dashes, numbered lists, or any markdown formatting.
 Never add preamble, labels, headers, quotes, or explanations.
 Never reference or echo the rewriting instruction.
-Write in flowing natural prose that sounds like a real person wrote it — not like AI output."""
+Write in flowing natural prose — the kind a real person would actually send."""
 
 
 MODE_INSTRUCTIONS = {
-    "Polish": "Fix grammar, spelling, flow, and clarity while keeping the original tone.",
-    "Warm": "Make the message warmer, more natural, and kind without becoming overly formal.",
-    "Professional": "Make the message clear, polished, and professional without sounding stiff.",
-    "Shorter": "Make the message more concise while preserving the meaning.",
-    "Translate": "Translate the message into the target language. Preserve meaning, tone, and formatting exactly. Output only the translation.",
-    "Grammar": "Correct only grammar errors, spelling mistakes, and punctuation (commas, periods, apostrophes, capitalization). Preserve the exact wording and tone — only fix what is grammatically wrong.",
-    "Flirty": "Rewrite in a playful, flirtatious, and charming tone. Keep it fun, light, and engaging — perfect for dating and romantic conversations.",
-    "Street": "Rewrite in a casual cool street style using modern urban slang. Sound confident and authentic, like someone who is naturally trendy. Keep it real.",
-    "Funny": "Rewrite to be witty and funny while keeping the core message. Add humor, a clever twist, or playful energy without being offensive.",
+    "Polish": (
+        "Polish this message for clarity, flow, and correctness. Fix grammar, spelling, and awkward phrasing. "
+        "Keep the original tone, intent, and approximate length — don't add new ideas or change the meaning."
+    ),
+    "Warm": (
+        "Rewrite with genuine warmth and empathy. Make it feel heartfelt and human — like you truly care. "
+        "Conversational and kind, but never sappy, excessive, or over-the-top."
+    ),
+    "Professional": (
+        "Rewrite in a clear, confident, and professional tone. Use precise language and eliminate filler words, "
+        "hedging, and informal expressions. Sound authoritative yet approachable — polished, not stiff."
+    ),
+    "Shorter": (
+        "Cut this message down to its bare essentials. Keep only what truly needs to be said. "
+        "Remove every filler word, redundant phrase, and unnecessary detail. Every word must earn its place."
+    ),
+    "Translate": (
+        "Translate the message into the target language. Preserve meaning, tone, register, and style exactly. "
+        "Output only the translation — nothing else."
+    ),
+    "Grammar": (
+        "Correct only grammar errors, spelling mistakes, and punctuation issues (commas, periods, apostrophes, "
+        "capitalization). Do not change the wording, tone, or style in any other way — only fix what is wrong."
+    ),
+    "Flirty": (
+        "Rewrite in a playful, flirtatious, and charming tone. Add a touch of wit and confidence. "
+        "Keep it light, fun, and engaging — never desperate, needy, or over-the-top."
+    ),
+    "Vibe": (
+        "Rewrite in a relaxed, effortless, and modern tone — like texting your coolest friend. "
+        "Sound natural, confident, and real. Use casual contemporary language without trying too hard. "
+        "Low-key, smooth, and authentic."
+    ),
+    "Funny": (
+        "Make it funny. Add wit, a clever twist, or playful humor while keeping the core message intact. "
+        "Be genuinely funny — not forced or try-hard. Light-hearted and fun, never mean-spirited."
+    ),
     "Custom": "",  # handled separately using custom_instruction
 }
 
