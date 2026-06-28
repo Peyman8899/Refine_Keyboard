@@ -221,7 +221,7 @@ final class KeyboardViewController: UIInputViewController {
         actionRow.addArrangedSubview(aiBox)
         actionRow.addArrangedSubview(box1)
         actionRow.addArrangedSubview(box2)
-        box1.widthAnchor.constraint(equalToConstant: 161).isActive = true
+        box1.widthAnchor.constraint(equalToConstant: 164).isActive = true
         root.addArrangedSubview(actionRow)
 
         keyboardStack.axis = .vertical
