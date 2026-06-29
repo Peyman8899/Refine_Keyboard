@@ -4,22 +4,50 @@ final class KeyboardViewController: UIInputViewController {
     private enum KeyboardMode {
         case letters
         case numbers
+        case symbols
         case emoji
     }
 
     private let client = RewriteClient()
     private var outputLanguage = KeyboardSettings.rewriteLanguage
-    private let statusLabel = UILabel()
     private var languageButton: UIButton?
+    private var statusTask: Task<Void, Never>?
+    private var deleteTimer: Timer?
     private let keyboardStack = UIStackView()
     private var keyboardHeightConstraint: NSLayoutConstraint?
     private var letterButtons: [UIButton] = []
+    private var shiftButton: UIButton?
+    private var emojiScrollView: UIScrollView?
+    private var emojiCategoryAnchors: [UIView] = []
     private var isShifted = true
+    private var capsLocked = false
+    private var lastShiftTapTime: Date?
     private var keyboardMode: KeyboardMode = .letters
     private var lastRewriteCharacterCount: Int?
+    private let keyPreview = KeyPreviewView()
+    private let impactGenerator = UIImpactFeedbackGenerator(style: .light)
 
-    private let keyboardBackground = UIColor(red: 0.84, green: 0.86, blue: 0.89, alpha: 1)
-    private let systemKeyBackground = UIColor(red: 0.69, green: 0.72, blue: 0.77, alpha: 1)
+    private static func dynamicColor(light: UIColor, dark: UIColor) -> UIColor {
+        UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light }
+    }
+
+    private let keyboardBackground = KeyboardViewController.dynamicColor(
+        light: UIColor(red: 0.82, green: 0.84, blue: 0.87, alpha: 1),
+        dark: UIColor(red: 0.05, green: 0.05, blue: 0.06, alpha: 1)
+    )
+    private let letterKeyBackground = KeyboardViewController.dynamicColor(
+        light: .white,
+        dark: UIColor(red: 0.23, green: 0.23, blue: 0.24, alpha: 1)
+    )
+    private let specialKeyBackground = KeyboardViewController.dynamicColor(
+        light: UIColor(red: 0.68, green: 0.70, blue: 0.75, alpha: 1),
+        dark: UIColor(red: 0.14, green: 0.14, blue: 0.15, alpha: 1)
+    )
+    private let actionPillBackground = KeyboardViewController.dynamicColor(
+        light: UIColor(red: 0.92, green: 0.93, blue: 0.96, alpha: 1),
+        dark: UIColor(red: 0.18, green: 0.20, blue: 0.26, alpha: 1)
+    )
+
     private let emojiCategories: [(String, [[String]])] = [
         ("FREQUENTLY USED", [
             ["😁", "💕", "❤️", "😊", "✌️", "😎", "👍", "🎉"],
@@ -72,7 +100,15 @@ final class KeyboardViewController: UIInputViewController {
         keyboardHeightConstraint = view.heightAnchor.constraint(equalToConstant: 258)
         keyboardHeightConstraint?.priority = .defaultHigh
         keyboardHeightConstraint?.isActive = true
+        impactGenerator.prepare()
         setupKeyboard()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if traitCollection.userInterfaceStyle != previousTraitCollection?.userInterfaceStyle {
+            renderKeyboard()
+        }
     }
 
     private func setupKeyboard() {
@@ -90,11 +126,6 @@ final class KeyboardViewController: UIInputViewController {
             root.topAnchor.constraint(equalTo: view.topAnchor, constant: 6),
             root.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -6)
         ])
-
-        statusLabel.text = "Ready"
-        statusLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        statusLabel.textColor = .secondaryLabel
-        statusLabel.textAlignment = .center
 
         let modeRow = UIStackView()
         modeRow.axis = .horizontal
@@ -126,6 +157,10 @@ final class KeyboardViewController: UIInputViewController {
         keyboardStack.spacing = 6
         keyboardStack.translatesAutoresizingMaskIntoConstraints = false
         root.addArrangedSubview(keyboardStack)
+
+        keyPreview.keyFillColor = letterKeyBackground
+        view.addSubview(keyPreview)
+
         renderKeyboard()
     }
 
@@ -135,12 +170,17 @@ final class KeyboardViewController: UIInputViewController {
             view.removeFromSuperview()
         }
         letterButtons.removeAll()
+        shiftButton = nil
+        emojiScrollView = nil
+        emojiCategoryAnchors.removeAll()
 
         switch keyboardMode {
         case .letters:
             renderLetterKeyboard()
         case .numbers:
             renderNumberKeyboard()
+        case .symbols:
+            renderSymbolsKeyboard()
         case .emoji:
             renderEmojiKeyboard()
         }
@@ -156,12 +196,25 @@ final class KeyboardViewController: UIInputViewController {
     private func renderNumberKeyboard() {
         keyboardStack.addArrangedSubview(makeTextRow(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]))
         keyboardStack.addArrangedSubview(makeTextRow(["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""]))
-        keyboardStack.addArrangedSubview(makeSymbolRow())
+        keyboardStack.addArrangedSubview(makeSymbolRow(cornerTitle: "#+=") { [weak self] in
+            self?.keyboardMode = .symbols
+            self?.renderKeyboard()
+        })
+        keyboardStack.addArrangedSubview(makeCommandRow(modeTitle: "ABC"))
+    }
+
+    private func renderSymbolsKeyboard() {
+        keyboardStack.addArrangedSubview(makeTextRow(["[", "]", "{", "}", "#", "%", "^", "*", "+", "="]))
+        keyboardStack.addArrangedSubview(makeTextRow(["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•"]))
+        keyboardStack.addArrangedSubview(makeSymbolRow(cornerTitle: "123") { [weak self] in
+            self?.keyboardMode = .numbers
+            self?.renderKeyboard()
+        })
         keyboardStack.addArrangedSubview(makeCommandRow(modeTitle: "ABC"))
     }
 
     private func renderEmojiKeyboard() {
-        keyboardStack.addArrangedSubview(makeEmojiPager())
+        keyboardStack.addArrangedSubview(makeEmojiScrollView())
         keyboardStack.addArrangedSubview(makeEmojiTabsRow())
     }
 
@@ -189,16 +242,16 @@ final class KeyboardViewController: UIInputViewController {
         }
         commandRow.addArrangedSubview(emoji)
 
-        let space = makeKeyButton(title: "space")
-        addTapAction(to: space) { [weak self] in
-            self?.insertUserText(" ")
+        let space = makeKeyButton(title: "space", showsPreview: false)
+        addCharacterAction(to: space) { [weak self] in
+            self?.insertCharacter(" ")
         }
         commandRow.addArrangedSubview(space)
 
         let enter = makeSystemButton(title: "return")
         enter.widthAnchor.constraint(equalToConstant: 82).isActive = true
-        addTapAction(to: enter) { [weak self] in
-            self?.insertUserText("\n")
+        addCharacterAction(to: enter) { [weak self] in
+            self?.insertCharacter("\n")
         }
         commandRow.addArrangedSubview(enter)
 
@@ -216,31 +269,29 @@ final class KeyboardViewController: UIInputViewController {
         keys.forEach { key in
             let button = makeKeyButton(title: key)
             button.titleLabel?.font = .systemFont(ofSize: 24, weight: .regular)
-            addTapAction(to: button) { [weak self] in
-                self?.insertUserText(key)
+            addCharacterAction(to: button) { [weak self] in
+                self?.insertCharacter(key)
             }
             row.addArrangedSubview(button)
         }
         return row
     }
 
-    private func makeSymbolRow() -> UIStackView {
+    private func makeSymbolRow(cornerTitle: String, cornerAction: @escaping () -> Void) -> UIStackView {
         let row = makeRow()
         row.distribution = .fill
 
-        let symbols = makeSystemButton(title: "#+=")
-        symbols.widthAnchor.constraint(equalToConstant: 58).isActive = true
-        addTapAction(to: symbols) { [weak self] in
-            self?.showStatus("More symbols")
-        }
-        row.addArrangedSubview(symbols)
+        let corner = makeSystemButton(title: cornerTitle)
+        corner.widthAnchor.constraint(equalToConstant: 58).isActive = true
+        addTapAction(to: corner, action: cornerAction)
+        row.addArrangedSubview(corner)
 
         let keysRow = makeRow()
         [".", ",", "?", "!", "'"].forEach { key in
             let button = makeKeyButton(title: key)
             button.titleLabel?.font = .systemFont(ofSize: 24, weight: .regular)
-            addTapAction(to: button) { [weak self] in
-                self?.insertUserText(key)
+            addCharacterAction(to: button) { [weak self] in
+                self?.insertCharacter(key)
             }
             keysRow.addArrangedSubview(button)
         }
@@ -248,9 +299,7 @@ final class KeyboardViewController: UIInputViewController {
 
         let delete = makeSystemButton(title: nil, imageName: "delete.left")
         delete.widthAnchor.constraint(equalToConstant: 58).isActive = true
-        addTapAction(to: delete) { [weak self] in
-            self?.deleteUserText()
-        }
+        addDeleteAction(to: delete)
         row.addArrangedSubview(delete)
 
         return row
@@ -260,41 +309,40 @@ final class KeyboardViewController: UIInputViewController {
         let row = makeRow()
         emojis.forEach { emoji in
             let button = makeFlatEmojiButton(title: emoji)
-            addTapAction(to: button) { [weak self] in
-                self?.insertUserText(emoji)
+            addCharacterAction(to: button) { [weak self] in
+                self?.insertCharacter(emoji)
             }
             row.addArrangedSubview(button)
         }
         return row
     }
 
-    private func makeEmojiPager() -> UIScrollView {
+    private func makeEmojiScrollView() -> UIScrollView {
         let scrollView = UIScrollView()
-        scrollView.showsHorizontalScrollIndicator = false
-        scrollView.alwaysBounceHorizontal = true
-        scrollView.isPagingEnabled = true
+        scrollView.showsVerticalScrollIndicator = false
         scrollView.heightAnchor.constraint(equalToConstant: 154).isActive = true
 
-        let pages = UIStackView()
-        pages.axis = .horizontal
-        pages.spacing = 16
-        pages.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.addSubview(pages)
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(stack)
 
         emojiCategories.forEach { title, rows in
             let page = makeEmojiCategoryPage(title: title, rows: rows)
-            page.widthAnchor.constraint(equalTo: view.widthAnchor, constant: -8).isActive = true
-            pages.addArrangedSubview(page)
+            stack.addArrangedSubview(page)
+            emojiCategoryAnchors.append(page)
         }
 
         NSLayoutConstraint.activate([
-            pages.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
-            pages.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
-            pages.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
-            pages.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
-            pages.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor)
+            stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 4),
+            stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -4),
+            stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 4),
+            stack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -4),
+            stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -8)
         ])
 
+        emojiScrollView = scrollView
         return scrollView
     }
 
@@ -331,10 +379,25 @@ final class KeyboardViewController: UIInputViewController {
 
         let shift = makeSystemButton(title: nil, imageName: "shift")
         shift.widthAnchor.constraint(equalToConstant: 58).isActive = true
+        shiftButton = shift
         addTapAction(to: shift) { [weak self] in
             guard let self else { return }
-            self.isShifted.toggle()
+            let now = Date()
+            if let last = self.lastShiftTapTime, now.timeIntervalSince(last) < 0.35 {
+                self.capsLocked = true
+                self.isShifted = true
+                self.lastShiftTapTime = nil
+            } else {
+                if self.capsLocked {
+                    self.capsLocked = false
+                    self.isShifted = false
+                } else {
+                    self.isShifted.toggle()
+                }
+                self.lastShiftTapTime = now
+            }
             self.refreshLetterCasing()
+            self.updateShiftAppearance()
         }
         row.addArrangedSubview(shift)
 
@@ -344,48 +407,53 @@ final class KeyboardViewController: UIInputViewController {
 
         let delete = makeSystemButton(title: nil, imageName: "delete.left")
         delete.widthAnchor.constraint(equalToConstant: 58).isActive = true
-        addTapAction(to: delete) { [weak self] in
-            self?.deleteUserText()
-        }
+        addDeleteAction(to: delete)
         row.addArrangedSubview(delete)
+
+        updateShiftAppearance()
 
         return row
     }
 
     private func makeEmojiTabsRow() -> UIStackView {
         let row = makeRow()
-        row.distribution = .fill
 
         let abc = UIButton(type: .system)
         abc.setTitle("ABC", for: .normal)
         abc.setTitleColor(.label, for: .normal)
-        abc.titleLabel?.font = .systemFont(ofSize: 18, weight: .regular)
-        abc.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        abc.titleLabel?.font = .systemFont(ofSize: 15, weight: .regular)
         addTapAction(to: abc) { [weak self] in
             self?.keyboardMode = .letters
             self?.renderKeyboard()
         }
         row.addArrangedSubview(abc)
 
-        ["😎", "◒", "◷", "☺", "🐶", "🍎", "⚽", "🚗", "♡", "⚑"].forEach { title in
-            let label = UILabel()
-            label.text = title
-            label.textAlignment = .center
-            label.font = .systemFont(ofSize: 20, weight: .regular)
-            label.textColor = .secondaryLabel
-            row.addArrangedSubview(label)
+        ["clock", "face.smiling", "leaf", "fork.knife", "soccerball", "car"].enumerated().forEach { index, iconName in
+            let button = UIButton(type: .system)
+            button.setImage(UIImage(systemName: iconName), for: .normal)
+            button.tintColor = .secondaryLabel
+            addTapAction(to: button) { [weak self] in
+                self?.scrollToEmojiCategory(index)
+            }
+            row.addArrangedSubview(button)
         }
 
         let delete = UIButton(type: .system)
         delete.setImage(UIImage(systemName: "delete.left"), for: .normal)
         delete.tintColor = .label
-        delete.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        addTapAction(to: delete) { [weak self] in
-            self?.deleteUserText()
-        }
+        addDeleteAction(to: delete)
         row.addArrangedSubview(delete)
 
         return row
+    }
+
+    private func scrollToEmojiCategory(_ index: Int) {
+        guard let scrollView = emojiScrollView, index < emojiCategoryAnchors.count else { return }
+        let anchor = emojiCategoryAnchors[index]
+        let targetFrame = anchor.convert(anchor.bounds, to: scrollView)
+        let maxOffsetY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
+        let offsetY = min(max(0, targetFrame.minY), maxOffsetY)
+        scrollView.setContentOffset(CGPoint(x: 0, y: offsetY), animated: true)
     }
 
     private func makeRow() -> UIStackView {
@@ -407,12 +475,14 @@ final class KeyboardViewController: UIInputViewController {
         let button = makeKeyButton(title: title)
         button.titleLabel?.font = .systemFont(ofSize: 24, weight: .regular)
         letterButtons.append(button)
-        addTapAction(to: button) { [weak self, weak button] in
+        addCharacterAction(to: button) { [weak self, weak button] in
             guard let self, let title = button?.configuration?.title else { return }
-            self.insertUserText(self.isShifted ? title.uppercased() : title.lowercased())
-            if self.isShifted {
+            let useUppercase = self.isShifted || self.capsLocked
+            self.insertCharacter(useUppercase ? title.uppercased() : title.lowercased())
+            if self.isShifted && !self.capsLocked {
                 self.isShifted = false
                 self.refreshLetterCasing()
+                self.updateShiftAppearance()
             }
         }
         return button
@@ -425,12 +495,20 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
+    private func updateShiftAppearance() {
+        guard let shiftButton else { return }
+        let imageName = capsLocked ? "capslock.fill" : (isShifted ? "shift.fill" : "shift")
+        shiftButton.configuration?.image = UIImage(systemName: imageName)
+        shiftButton.configuration?.baseBackgroundColor = (isShifted || capsLocked) ? letterKeyBackground : specialKeyBackground
+    }
+
     private func makeActionButton(title: String) -> UIButton {
         var configuration = UIButton.Configuration.filled()
         configuration.title = title
-        configuration.baseBackgroundColor = UIColor(red: 0.92, green: 0.93, blue: 0.96, alpha: 1)
+        configuration.baseBackgroundColor = actionPillBackground
         configuration.baseForegroundColor = .label
-        configuration.cornerStyle = .medium
+        configuration.cornerStyle = .fixed
+        configuration.background.cornerRadius = 8
         configuration.titleLineBreakMode = .byTruncatingTail
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4)
 
@@ -444,33 +522,37 @@ final class KeyboardViewController: UIInputViewController {
         return button
     }
 
-    private func makeKeyButton(title: String) -> UIButton {
+    private func makeKeyButton(title: String, showsPreview: Bool = true) -> UIButton {
         var configuration = UIButton.Configuration.filled()
         configuration.title = title
-        configuration.baseBackgroundColor = .white
+        configuration.baseBackgroundColor = letterKeyBackground
         configuration.baseForegroundColor = .label
-        configuration.cornerStyle = .medium
+        configuration.cornerStyle = .fixed
+        configuration.background.cornerRadius = 5
         configuration.titleLineBreakMode = .byTruncatingTail
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 2, bottom: 0, trailing: 2)
 
         let button = UIButton(configuration: configuration)
-        button.layer.borderColor = UIColor.black.withAlphaComponent(0.04).cgColor
-        button.layer.borderWidth = 0.5
         button.titleLabel?.numberOfLines = 1
         button.titleLabel?.adjustsFontSizeToFitWidth = true
         button.titleLabel?.minimumScaleFactor = 0.55
         button.titleLabel?.lineBreakMode = .byTruncatingTail
         button.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        applyKeycapShadow(to: button)
         addPressFeedback(to: button)
+        if showsPreview {
+            addKeyPreview(to: button)
+        }
         return button
     }
 
     private func makeSystemButton(title: String?, imageName: String? = nil) -> UIButton {
         var configuration = UIButton.Configuration.filled()
         configuration.title = title
-        configuration.baseBackgroundColor = systemKeyBackground
+        configuration.baseBackgroundColor = specialKeyBackground
         configuration.baseForegroundColor = .label
-        configuration.cornerStyle = .medium
+        configuration.cornerStyle = .fixed
+        configuration.background.cornerRadius = 5
         configuration.titleLineBreakMode = .byTruncatingTail
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4)
         if let imageName {
@@ -482,6 +564,7 @@ final class KeyboardViewController: UIInputViewController {
         button.titleLabel?.adjustsFontSizeToFitWidth = true
         button.titleLabel?.minimumScaleFactor = 0.7
         button.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        applyKeycapShadow(to: button)
         addPressFeedback(to: button)
         return button
     }
@@ -494,9 +577,68 @@ final class KeyboardViewController: UIInputViewController {
         return button
     }
 
+    private func applyKeycapShadow(to button: UIButton) {
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOpacity = 0.2
+        button.layer.shadowOffset = CGSize(width: 0, height: 1)
+        button.layer.shadowRadius = 0.5
+        button.layer.masksToBounds = false
+    }
+
     private func addTapAction(to button: UIButton, action: @escaping () -> Void) {
-        let handler = UIAction { _ in action() }
-        button.addAction(handler, for: .touchUpInside)
+        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+    }
+
+    private func addCharacterAction(to button: UIButton, action: @escaping () -> Void) {
+        button.addAction(UIAction { _ in action() }, for: .touchDown)
+    }
+
+    private func addDeleteAction(to button: UIButton) {
+        button.addAction(UIAction { [weak self] _ in
+            self?.deleteCharacter()
+            self?.startDeleteRepeat()
+        }, for: .touchDown)
+        button.addAction(UIAction { [weak self] _ in
+            self?.stopDeleteRepeat()
+        }, for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
+    }
+
+    private func startDeleteRepeat() {
+        deleteTimer?.invalidate()
+        deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+            self?.deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                self?.deleteCharacter()
+            }
+        }
+    }
+
+    private func stopDeleteRepeat() {
+        deleteTimer?.invalidate()
+        deleteTimer = nil
+    }
+
+    private func addKeyPreview(to button: UIButton) {
+        button.addAction(UIAction { [weak self, weak button] _ in
+            guard let self, let button, let title = button.configuration?.title, !title.isEmpty else { return }
+            let frame = button.convert(button.bounds, to: self.view)
+            self.keyPreview.show(character: title, above: frame, in: self.view)
+        }, for: .touchDown)
+
+        button.addAction(UIAction { [weak self] _ in
+            self?.keyPreview.hide()
+        }, for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
+    }
+
+    private func insertCharacter(_ text: String) {
+        UIDevice.current.playInputClick()
+        impactGenerator.impactOccurred()
+        insertUserText(text)
+    }
+
+    private func deleteCharacter() {
+        UIDevice.current.playInputClick()
+        impactGenerator.impactOccurred()
+        deleteUserText()
     }
 
     private func insertUserText(_ text: String) {
@@ -608,13 +750,12 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func showStatus(_ message: String) {
-        statusLabel.text = message
-
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_400_000_000)
-            await MainActor.run {
-                self?.updateLanguageButtonTitle()
-            }
+        statusTask?.cancel()
+        languageButton?.configuration?.title = message
+        statusTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { self?.updateLanguageButtonTitle() }
         }
     }
 
@@ -646,4 +787,8 @@ final class KeyboardViewController: UIInputViewController {
         textDocumentProxy.insertText(refined)
         lastRewriteCharacterCount = refined.count
     }
+}
+
+extension KeyboardViewController: UIInputViewAudioFeedback {
+    var enableInputClicksWhenVisible: Bool { true }
 }

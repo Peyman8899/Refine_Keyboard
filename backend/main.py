@@ -11,6 +11,18 @@ from pydantic import BaseModel, Field
 app = FastAPI(title="RefineKeyboard API")
 request_log: dict[str, deque[float]] = defaultdict(deque)
 
+_openai_client: OpenAI | None = None
+
+
+def get_openai_client() -> OpenAI:
+    global _openai_client
+    if _openai_client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured")
+        _openai_client = OpenAI(api_key=api_key)
+    return _openai_client
+
 
 class RefineRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
@@ -58,6 +70,15 @@ def check_rate_limit(request: Request) -> None:
     timestamps.append(now)
 
 
+def check_app_secret(request: Request) -> None:
+    expected = os.getenv("REFINE_APP_SECRET", "")
+    if not expected:
+        return  # Secret not configured — skip check (dev/local mode)
+    received = request.headers.get("X-App-Secret", "")
+    if received != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
 @app.get("/")
 def root() -> dict[str, str]:
     return {"name": "RefineKeyboard API", "status": "ok"}
@@ -70,13 +91,9 @@ def health() -> dict[str, str]:
 
 @app.post("/refine", response_model=RefineResponse)
 def refine(payload: RefineRequest, request: Request) -> RefineResponse:
+    check_app_secret(request)
     check_rate_limit(request)
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured")
-
-    client = OpenAI(api_key=api_key)
     language_instruction = (
         "Keep the output in the same language as the input."
         if payload.language == "Auto"
@@ -88,7 +105,7 @@ def refine(payload: RefineRequest, request: Request) -> RefineResponse:
         f"Message:\n{payload.text}"
     )
 
-    response = client.responses.create(
+    response = get_openai_client().responses.create(
         model=os.getenv("OPENAI_MODEL", "gpt-5.4-nano"),
         instructions=SYSTEM_PROMPT,
         input=prompt,
