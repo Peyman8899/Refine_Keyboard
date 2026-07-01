@@ -242,7 +242,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         commandRow.addArrangedSubview(emoji)
 
-        let space = makeKeyButton(title: "space", showsPreview: false)
+        let space = makeSpaceButton()
         addCharacterAction(to: space) { [weak self] in
             self?.insertCharacter(" ")
         }
@@ -522,6 +522,21 @@ final class KeyboardViewController: UIInputViewController {
         return button
     }
 
+    private func makeSpaceButton() -> UIButton {
+        let button = SpaceBarButton(type: .custom)
+        button.setTitle("space", for: .normal)
+        button.setTitleColor(.label, for: .normal)
+        button.titleLabel?.font = .systemFont(ofSize: 16, weight: .regular)
+        button.titleLabel?.textAlignment = .center
+        button.backgroundColor = letterKeyBackground
+        button.layer.cornerRadius = 5
+        button.layer.masksToBounds = false
+        button.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        applyKeycapShadow(to: button)
+        addPressFeedback(to: button)
+        return button
+    }
+
     private func makeKeyButton(title: String, showsPreview: Bool = true) -> UIButton {
         var configuration = UIButton.Configuration.filled()
         configuration.title = title
@@ -791,4 +806,13 @@ final class KeyboardViewController: UIInputViewController {
 
 extension KeyboardViewController: UIInputViewAudioFeedback {
     var enableInputClicksWhenVisible: Bool { true }
+}
+
+// UIButton.Configuration's internal content view can create dead zones on wide buttons.
+// SpaceBarButton uses .custom type (no configuration layer) and expands pointInside
+// so every pixel of the space bar reliably registers a touch.
+private final class SpaceBarButton: UIButton {
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        bounds.insetBy(dx: -6, dy: -4).contains(point)
+    }
 }
