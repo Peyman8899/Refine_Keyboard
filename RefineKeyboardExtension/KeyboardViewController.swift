@@ -442,7 +442,14 @@ final class KeyboardViewController: UIInputViewController {
                 req.httpMethod = "POST"
                 req.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 req.setValue(KeyboardSettings.appSecret, forHTTPHeaderField: "X-App-Secret")
-                req.httpBody = try JSONEncoder().encode(["text": text, "voice": "nova"])
+                // For the target-language button pass the language so the backend
+                // can pick a voice suited to that script (e.g. onyx for Persian).
+                let lang = target == .target ? KeyboardSettings.translateLanguage : "English"
+                req.httpBody = try JSONEncoder().encode([
+                    "text": text,
+                    "voice": "nova",   // backend overrides this based on language
+                    "language": lang
+                ])
                 let (data, _) = try await URLSession.shared.data(for: req)
                 guard !Task.isCancelled else { return }
                 await MainActor.run { [weak self] in

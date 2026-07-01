@@ -171,15 +171,46 @@ def refine(payload: RefineRequest, request: Request) -> RefineResponse:
 class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4096)
     voice: str = Field(default="nova")
+    language: str = Field(default="")  # BCP-47 or language name, e.g. "fa", "Persian"
+
+
+# Languages where nova sounds unnatural — use onyx (better multilingual coverage).
+# onyx handles Persian, Arabic, Hebrew, CJK, and most non-Latin scripts much better.
+_ONYX_LANGUAGES = {
+    "fa", "persian", "farsi",
+    "ar", "arabic",
+    "he", "hebrew",
+    "hi", "hindi",
+    "ur", "urdu",
+    "zh", "chinese",
+    "ja", "japanese",
+    "ko", "korean",
+    "th", "thai",
+    "vi", "vietnamese",
+    "tr", "turkish",
+    "ru", "russian",
+    "uk", "ukrainian",
+}
+
+
+def _pick_voice(requested_voice: str, language: str) -> str:
+    """Return the best OpenAI voice for the given language."""
+    if requested_voice not in ("nova", ""):
+        return requested_voice  # caller specified an explicit voice — honour it
+    lang = language.lower().strip()
+    if any(lang == code or lang.startswith(code + "-") for code in _ONYX_LANGUAGES):
+        return "onyx"
+    return "nova"
 
 
 @app.post("/speak")
 def speak_text(payload: SpeakRequest, request: Request) -> Response:
     check_app_secret(request)
     check_rate_limit(request)
+    voice = _pick_voice(payload.voice, payload.language)
     audio = get_openai_client().audio.speech.create(
-        model="tts-1",
-        voice=payload.voice,
+        model="tts-1-hd",   # HD for all languages — noticeably clearer
+        voice=voice,
         input=payload.text,
     )
     return Response(content=audio.content, media_type="audio/mpeg")
