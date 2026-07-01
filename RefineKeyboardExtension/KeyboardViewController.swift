@@ -19,6 +19,7 @@ final class KeyboardViewController: UIInputViewController {
     private var shiftButton: UIButton?
     private var emojiScrollView: UIScrollView?
     private var emojiCategoryAnchors: [UIView] = []
+    private weak var emojiTabBar: EmojiTabBar?
     private var isShifted = true
     private var capsLocked = false
     private var lastShiftTapTime: Date?
@@ -57,27 +58,58 @@ final class KeyboardViewController: UIInputViewController {
         ("SMILEYS & PEOPLE", [
             ["😀", "🥹", "☺️", "😃", "😅", "😊", "😄", "😂"],
             ["😇", "😆", "🤣", "🙂", "😉", "😍", "😘", "😜"],
-            ["🤔", "😬", "🙄", "😴", "😢", "😡", "👏", "👋"]
+            ["🤔", "😬", "🙄", "😴", "😢", "😡", "👏", "👋"],
+            ["👶", "🧒", "👦", "👧", "🧑", "👱", "👨", "👩"],
+            ["👴", "👵", "🧔", "💪", "👁️", "👅", "👂", "🦷"]
         ]),
         ("ANIMALS & NATURE", [
             ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼"],
             ["🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔"],
-            ["🌸", "🌹", "🌞", "🌙", "⭐️", "🔥", "🌈", "🌎"]
+            ["🦋", "🐛", "🐝", "🦎", "🐍", "🐢", "🦕", "🦖"],
+            ["🌸", "🌹", "🌺", "🌻", "🌼", "🌾", "🍀", "🌿"],
+            ["🌞", "🌙", "⭐️", "🔥", "🌈", "🌊", "🌍", "⛄️"]
         ]),
         ("FOOD & DRINK", [
             ["🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓"],
-            ["🍒", "🍑", "🥑", "🍔", "🍟", "🍕", "🌮", "🍣"],
-            ["🍩", "🍪", "🎂", "☕️", "🍺", "🍷", "🥂", "🧃"]
+            ["🍒", "🍑", "🥝", "🥑", "🍅", "🥦", "🌽", "🥕"],
+            ["🍔", "🍟", "🍕", "🌮", "🌯", "🥗", "🍣", "🍱"],
+            ["🍩", "🍪", "🎂", "🧁", "🍫", "🍬", "🍭", "🍦"],
+            ["☕️", "🧋", "🍵", "🍺", "🍷", "🥂", "🧃", "🥤"]
         ]),
         ("ACTIVITY", [
             ["⚽️", "🏀", "🏈", "⚾️", "🎾", "🏐", "🎱", "🏓"],
-            ["🏃", "💃", "🕺", "🚴", "🏆", "🎮", "🎲", "🎯"],
-            ["🎵", "🎤", "🎧", "🎬", "🎨", "🎭", "🎸", "🎹"]
+            ["🏊", "🚴", "🏋️", "🤸", "🏄", "🧗", "🏇", "🤺"],
+            ["🏆", "🥇", "🥈", "🥉", "🎖️", "🎗️", "🎫", "🎟️"],
+            ["🎵", "🎤", "🎧", "🎬", "🎨", "🎭", "🎸", "🎹"],
+            ["🎮", "🕹️", "🎲", "🎯", "🎳", "🎰", "🧩", "🪀"]
         ]),
-        ("TRAVEL & OBJECTS", [
-            ["🚗", "🚕", "🚌", "🚎", "🏎️", "🚓", "✈️", "🚀"],
-            ["🏠", "🏢", "🏝️", "⛰️", "⌚️", "📱", "💻", "⌨️"],
-            ["💡", "📌", "📎", "✂️", "🔒", "🔑", "❤️", "✅"]
+        ("TRAVEL & PLACES", [
+            ["🚗", "🚕", "🚌", "🏎️", "🚓", "🚑", "🚒", "🚐"],
+            ["✈️", "🚀", "🛸", "🚁", "⛵️", "🚂", "🚢", "🛺"],
+            ["🏠", "🏢", "🏰", "🏯", "🗼", "🗽", "🗿", "⛩️"],
+            ["🌋", "🏝️", "🏜️", "⛰️", "🗻", "🏕️", "🛣️", "🌉"],
+            ["🎡", "🎢", "🎠", "🏟️", "🌃", "🌆", "🌇", "🌁"]
+        ]),
+        ("OBJECTS", [
+            ["⌚️", "📱", "💻", "⌨️", "🖥️", "🖨️", "📷", "📸"],
+            ["📺", "📻", "🎙️", "📡", "🔋", "🔌", "💡", "🔦"],
+            ["📮", "📦", "📝", "📓", "📚", "📌", "📎", "✂️"],
+            ["🔒", "🔑", "🗝️", "🔨", "⚙️", "🧲", "🪜", "🧸"],
+            ["💊", "🩺", "🔬", "🔭", "🪄", "🎁", "🎀", "🛍️"]
+        ]),
+        ("SYMBOLS", [
+            ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍"],
+            ["💯", "✅", "❌", "❓", "❗️", "💤", "🔔", "🔕"],
+            ["🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "⚫️", "⚪️"],
+            ["♠️", "♥️", "♦️", "♣️", "♾️", "✴️", "🔱", "📛"],
+            ["⭐", "🌟", "💫", "✨", "🔥", "💥", "🌀", "🎵"]
+        ]),
+        ("FLAGS", [
+            ["🏳️", "🏴", "🏁", "🚩", "🏳️‍🌈", "🏳️‍⚧️", "🇺🇳", "🏴‍☠️"],
+            ["🇺🇸", "🇬🇧", "🇨🇦", "🇫🇷", "🇩🇪", "🇮🇹", "🇪🇸", "🇵🇹"],
+            ["🇯🇵", "🇨🇳", "🇰🇷", "🇮🇳", "🇦🇺", "🇧🇷", "🇲🇽", "🇷🇺"],
+            ["🇸🇦", "🇮🇷", "🇿🇦", "🇳🇬", "🇪🇬", "🇹🇷", "🇮🇩", "🇵🇰"],
+            ["🇸🇪", "🇳🇴", "🇩🇰", "🇫🇮", "🇳🇱", "🇧🇪", "🇨🇭", "🇦🇹"]
         ])
     ]
 
@@ -214,8 +246,31 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func renderEmojiKeyboard() {
-        keyboardStack.addArrangedSubview(makeEmojiScrollView())
-        keyboardStack.addArrangedSubview(makeEmojiTabsRow())
+        let scrollView = makeEmojiScrollView()
+        scrollView.delegate = self
+        keyboardStack.addArrangedSubview(scrollView)
+
+        let tabBar = EmojiTabBar(
+            categoryIcons: ["clock", "face.smiling", "leaf", "fork.knife",
+                            "soccerball", "car", "lightbulb", "number", "flag"],
+            onSelectABC: { [weak self] in
+                self?.keyboardMode = .letters
+                self?.renderKeyboard()
+            },
+            onSelectCategory: { [weak self] index in
+                self?.scrollToEmojiCategory(index)
+                self?.emojiTabBar?.setActiveIndex(index, animated: true)
+            },
+            onDeleteBegin: { [weak self] in
+                self?.deleteCharacter()
+                self?.startDeleteRepeat()
+            },
+            onDeleteEnd: { [weak self] in
+                self?.stopDeleteRepeat()
+            }
+        )
+        emojiTabBar = tabBar
+        keyboardStack.addArrangedSubview(tabBar)
     }
 
     private func makeCommandRow(modeTitle: String) -> UIStackView {
@@ -411,38 +466,6 @@ final class KeyboardViewController: UIInputViewController {
         row.addArrangedSubview(delete)
 
         updateShiftAppearance()
-
-        return row
-    }
-
-    private func makeEmojiTabsRow() -> UIStackView {
-        let row = makeRow()
-
-        let abc = UIButton(type: .system)
-        abc.setTitle("ABC", for: .normal)
-        abc.setTitleColor(.label, for: .normal)
-        abc.titleLabel?.font = .systemFont(ofSize: 15, weight: .regular)
-        addTapAction(to: abc) { [weak self] in
-            self?.keyboardMode = .letters
-            self?.renderKeyboard()
-        }
-        row.addArrangedSubview(abc)
-
-        ["clock", "face.smiling", "leaf", "fork.knife", "soccerball", "car"].enumerated().forEach { index, iconName in
-            let button = UIButton(type: .system)
-            button.setImage(UIImage(systemName: iconName), for: .normal)
-            button.tintColor = .secondaryLabel
-            addTapAction(to: button) { [weak self] in
-                self?.scrollToEmojiCategory(index)
-            }
-            row.addArrangedSubview(button)
-        }
-
-        let delete = UIButton(type: .system)
-        delete.setImage(UIImage(systemName: "delete.left"), for: .normal)
-        delete.tintColor = .label
-        addDeleteAction(to: delete)
-        row.addArrangedSubview(delete)
 
         return row
     }
@@ -814,5 +837,163 @@ extension KeyboardViewController: UIInputViewAudioFeedback {
 private final class SpaceBarButton: UIButton {
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
         bounds.insetBy(dx: -6, dy: -4).contains(point)
+    }
+}
+
+// MARK: - UIScrollViewDelegate (emoji category live tracking)
+
+extension KeyboardViewController: UIScrollViewDelegate {
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === emojiScrollView, !emojiCategoryAnchors.isEmpty else { return }
+        let threshold = scrollView.contentOffset.y + scrollView.bounds.height * 0.25
+        var active = 0
+        for (i, anchor) in emojiCategoryAnchors.enumerated() {
+            let anchorY = anchor.convert(CGPoint.zero, to: scrollView).y
+            if anchorY <= threshold { active = i }
+        }
+        emojiTabBar?.setActiveIndex(active, animated: false)
+    }
+}
+
+// MARK: - EmojiTabBar
+
+final class EmojiTabBar: UIView {
+
+    private var categoryButtons: [UIButton] = []
+    private let indicator = UIView()
+    private var indicatorCenterX: NSLayoutConstraint?
+    private var indicatorWidth: NSLayoutConstraint?
+    private weak var iconStack: UIStackView?
+    private var currentIndex = 0
+
+    init(
+        categoryIcons: [String],
+        onSelectABC: @escaping () -> Void,
+        onSelectCategory: @escaping (Int) -> Void,
+        onDeleteBegin: @escaping () -> Void,
+        onDeleteEnd: @escaping () -> Void
+    ) {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        heightAnchor.constraint(equalToConstant: 44).isActive = true
+
+        // Separator line at top (matches iPhone native)
+        let sep = UIView()
+        sep.backgroundColor = .separator
+        sep.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(sep)
+        NSLayoutConstraint.activate([
+            sep.topAnchor.constraint(equalTo: topAnchor),
+            sep.leadingAnchor.constraint(equalTo: leadingAnchor),
+            sep.trailingAnchor.constraint(equalTo: trailingAnchor),
+            sep.heightAnchor.constraint(equalToConstant: 0.5)
+        ])
+
+        // ABC button (left)
+        let abc = UIButton(type: .system)
+        abc.setTitle("ABC", for: .normal)
+        abc.setTitleColor(.label, for: .normal)
+        abc.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
+        abc.translatesAutoresizingMaskIntoConstraints = false
+        abc.addAction(UIAction { _ in onSelectABC() }, for: .touchUpInside)
+        addSubview(abc)
+
+        // Delete button (right)
+        let del = UIButton(type: .system)
+        del.setImage(UIImage(systemName: "delete.left"), for: .normal)
+        del.tintColor = .label
+        del.translatesAutoresizingMaskIntoConstraints = false
+        del.addAction(UIAction { _ in onDeleteBegin() }, for: .touchDown)
+        del.addAction(UIAction { _ in onDeleteEnd() }, for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
+        addSubview(del)
+
+        NSLayoutConstraint.activate([
+            abc.leadingAnchor.constraint(equalTo: leadingAnchor),
+            abc.centerYAnchor.constraint(equalTo: centerYAnchor),
+            abc.widthAnchor.constraint(equalToConstant: 46),
+            abc.topAnchor.constraint(equalTo: topAnchor),
+            abc.bottomAnchor.constraint(equalTo: bottomAnchor),
+            del.trailingAnchor.constraint(equalTo: trailingAnchor),
+            del.centerYAnchor.constraint(equalTo: centerYAnchor),
+            del.widthAnchor.constraint(equalToConstant: 46),
+            del.topAnchor.constraint(equalTo: topAnchor),
+            del.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+
+        // Category icon stack (fills space between ABC and delete)
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.distribution = .fillEqually
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: abc.trailingAnchor),
+            stack.trailingAnchor.constraint(equalTo: del.leadingAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+        iconStack = stack
+
+        categoryIcons.enumerated().forEach { i, name in
+            let btn = UIButton(type: .system)
+            btn.setImage(UIImage(systemName: name), for: .normal)
+            btn.tintColor = i == 0 ? .systemBlue : UIColor.secondaryLabel
+            btn.addAction(UIAction { _ in onSelectCategory(i) }, for: .touchUpInside)
+            stack.addArrangedSubview(btn)
+            categoryButtons.append(btn)
+        }
+
+        // Active underline indicator
+        indicator.backgroundColor = .systemBlue
+        indicator.layer.cornerRadius = 1.5
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(indicator)
+
+        let cx = indicator.centerXAnchor.constraint(equalTo: leadingAnchor, constant: 0)
+        let iw = indicator.widthAnchor.constraint(equalToConstant: 22)
+        indicatorCenterX = cx
+        indicatorWidth = iw
+
+        NSLayoutConstraint.activate([
+            indicator.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
+            indicator.heightAnchor.constraint(equalToConstant: 3),
+            cx, iw
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // Reposition indicator after first layout pass when button frames are known
+        updateIndicatorPosition(animated: false)
+    }
+
+    func setActiveIndex(_ index: Int, animated: Bool) {
+        guard index < categoryButtons.count else { return }
+        currentIndex = index
+        categoryButtons.enumerated().forEach { i, btn in
+            btn.tintColor = i == index ? .systemBlue : .secondaryLabel
+        }
+        updateIndicatorPosition(animated: animated)
+    }
+
+    private func updateIndicatorPosition(animated: Bool) {
+        guard currentIndex < categoryButtons.count,
+              let stack = iconStack,
+              stack.bounds.width > 0 else { return }
+
+        let btnWidth = stack.bounds.width / CGFloat(categoryButtons.count)
+        let stackOriginX = stack.frame.minX
+        let centerX = stackOriginX + btnWidth * CGFloat(currentIndex) + btnWidth / 2
+
+        indicatorCenterX?.constant = centerX
+        indicatorWidth?.constant = max(18, btnWidth * 0.55)
+
+        if animated {
+            UIView.animate(withDuration: 0.2, delay: 0, options: .curveEaseOut) {
+                self.layoutIfNeeded()
+            }
+        }
     }
 }
