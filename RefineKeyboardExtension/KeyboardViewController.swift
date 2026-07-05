@@ -387,9 +387,10 @@ final class KeyboardViewController: UIInputViewController {
             aiOriginalText = selected
             aiContextBefore = ""; aiContextAfter = ""
         } else {
-            aiContextBefore = textDocumentProxy.documentContextBeforeInput ?? ""
-            aiContextAfter  = textDocumentProxy.documentContextAfterInput ?? ""
-            aiOriginalText  = (aiContextBefore + aiContextAfter).trimmingCharacters(in: .whitespacesAndNewlines)
+            let (raw, trimmed) = captureFullDraft()
+            aiContextBefore = raw   // full raw text; cursor is at end after capture
+            aiContextAfter  = ""
+            aiOriginalText  = trimmed
         }
         guard !aiOriginalText.isEmpty else { showStatus("Type or select text"); return }
 
@@ -1431,9 +1432,16 @@ final class KeyboardViewController: UIInputViewController {
 
         let selected = textDocumentProxy.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let usingSelection = !selected.isEmpty
-        let contextBeforeInput = usingSelection ? "" : (textDocumentProxy.documentContextBeforeInput ?? "")
-        let contextAfterInput  = usingSelection ? "" : (textDocumentProxy.documentContextAfterInput ?? "")
-        let text = usingSelection ? selected : (contextBeforeInput + contextAfterInput).trimmingCharacters(in: .whitespacesAndNewlines)
+        var contextBeforeInput = ""
+        var contextAfterInput  = ""
+        let text: String
+        if usingSelection {
+            text = selected
+        } else {
+            let (raw, trimmed) = captureFullDraft()
+            contextBeforeInput = raw   // cursor at end after capture; after = ""
+            text = trimmed
+        }
 
         guard !text.isEmpty else {
             showStatus("Type or select text")
@@ -1486,14 +1494,12 @@ final class KeyboardViewController: UIInputViewController {
         if !selected.isEmpty {
             source = selected
         } else {
-            let before = textDocumentProxy.documentContextBeforeInput ?? ""
-            let after  = textDocumentProxy.documentContextAfterInput ?? ""
-            let full = (before + after).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !full.isEmpty else {
+            let (_, trimmed) = captureFullDraft()
+            guard !trimmed.isEmpty else {
                 showTranslateStatus("Type or select text")
                 return
             }
-            source = full
+            source = trimmed
         }
 
         let targetLanguage = KeyboardSettings.translateLanguage
@@ -1560,6 +1566,26 @@ final class KeyboardViewController: UIInputViewController {
         }
 
         return (error as? LocalizedError)?.errorDescription ?? "Could not refine"
+    }
+
+    /// Captures the full text in the host app by temporarily moving the cursor to the document
+    /// start, reading documentContextAfterInput (which now spans the whole document), then
+    /// restoring the cursor to the end. This bypasses the silent iOS buffer limit on
+    /// documentContextBeforeInput that silently drops the beginning of long messages.
+    /// Returns (raw, trimmed) — raw preserves exact char count for deletion, trimmed for API.
+    private func captureFullDraft() -> (raw: String, trimmed: String) {
+        let before = textDocumentProxy.documentContextBeforeInput ?? ""
+        let after  = textDocumentProxy.documentContextAfterInput ?? ""
+
+        // Move to document start (clamped by system), read all text as afterInput
+        textDocumentProxy.adjustTextPosition(byCharacterOffset: -100_000)
+        let fromStart = textDocumentProxy.documentContextAfterInput ?? ""
+        // Restore cursor to end
+        textDocumentProxy.adjustTextPosition(byCharacterOffset: 100_000)
+
+        // Use whichever capture is longer — from-start wins for long messages
+        let raw = fromStart.count > before.count + after.count ? fromStart : before + after
+        return (raw, raw.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     private func replaceCurrentDraft(contextBeforeInput: String, contextAfterInput: String, refined: String) {

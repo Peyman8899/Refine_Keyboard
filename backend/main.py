@@ -1,5 +1,9 @@
+import base64
+import json
 import os
 import time
+import urllib.error
+import urllib.request
 from collections import defaultdict, deque
 from typing import Literal
 
@@ -171,46 +175,97 @@ def refine(payload: RefineRequest, request: Request) -> RefineResponse:
 class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4096)
     voice: str = Field(default="nova")
-    language: str = Field(default="")  # BCP-47 or language name, e.g. "fa", "Persian"
+    language: str = Field(default="")  # language name sent by iOS, e.g. "Persian", "Arabic"
 
 
-# Languages where nova sounds unnatural — use onyx (better multilingual coverage).
-# onyx handles Persian, Arabic, Hebrew, CJK, and most non-Latin scripts much better.
-_ONYX_LANGUAGES = {
-    "fa", "persian", "farsi",
-    "ar", "arabic",
-    "he", "hebrew",
-    "hi", "hindi",
-    "ur", "urdu",
-    "zh", "chinese",
-    "ja", "japanese",
-    "ko", "korean",
-    "th", "thai",
-    "vi", "vietnamese",
-    "tr", "turkish",
-    "ru", "russian",
-    "uk", "ukrainian",
+# Google Cloud TTS: native-quality voices for non-Latin languages.
+# Activated automatically when GOOGLE_TTS_API_KEY is set on Render.
+# fa-IR-Wavenet-D is a genuine Iranian Persian voice (not Afghan accent).
+_GOOGLE_VOICES: dict[str, tuple[str, str]] = {
+    "fa":                   ("fa-IR", "fa-IR-Wavenet-D"),
+    "persian":              ("fa-IR", "fa-IR-Wavenet-D"),
+    "farsi":                ("fa-IR", "fa-IR-Wavenet-D"),
+    "ar":                   ("ar-XA", "ar-XA-Wavenet-B"),
+    "arabic":               ("ar-XA", "ar-XA-Wavenet-B"),
+    "he":                   ("he-IL", "he-IL-Wavenet-B"),
+    "hebrew":               ("he-IL", "he-IL-Wavenet-B"),
+    "hi":                   ("hi-IN", "hi-IN-Wavenet-C"),
+    "hindi":                ("hi-IN", "hi-IN-Wavenet-C"),
+    "ur":                   ("ur-PK", "ur-PK-Standard-B"),
+    "urdu":                 ("ur-PK", "ur-PK-Standard-B"),
+    "zh":                   ("cmn-CN", "cmn-CN-Wavenet-B"),
+    "chinese":              ("cmn-CN", "cmn-CN-Wavenet-B"),
+    "chinese simplified":   ("cmn-CN", "cmn-CN-Wavenet-B"),
+    "chinese traditional":  ("cmn-TW", "cmn-TW-Wavenet-B"),
+    "ja":                   ("ja-JP", "ja-JP-Wavenet-B"),
+    "japanese":             ("ja-JP", "ja-JP-Wavenet-B"),
+    "ko":                   ("ko-KR", "ko-KR-Wavenet-B"),
+    "korean":               ("ko-KR", "ko-KR-Wavenet-B"),
+    "ru":                   ("ru-RU", "ru-RU-Wavenet-B"),
+    "russian":              ("ru-RU", "ru-RU-Wavenet-B"),
+    "tr":                   ("tr-TR", "tr-TR-Wavenet-B"),
+    "turkish":              ("tr-TR", "tr-TR-Wavenet-B"),
+    "th":                   ("th-TH", "th-TH-Wavenet-C"),
+    "thai":                 ("th-TH", "th-TH-Wavenet-C"),
+    "vi":                   ("vi-VN", "vi-VN-Wavenet-B"),
+    "vietnamese":           ("vi-VN", "vi-VN-Wavenet-B"),
+    "uk":                   ("uk-UA", "uk-UA-Wavenet-A"),
+    "ukrainian":            ("uk-UA", "uk-UA-Wavenet-A"),
 }
 
 
-def _pick_voice(requested_voice: str, language: str) -> str:
-    """Return the best OpenAI voice for the given language."""
-    if requested_voice not in ("nova", ""):
-        return requested_voice  # caller specified an explicit voice — honour it
+def _google_tts(text: str, language: str, api_key: str) -> bytes:
+    """Call Google Cloud TTS REST API. Returns MP3 bytes. Raises on any failure."""
+    lang_key = language.lower().strip()
+    entry = _GOOGLE_VOICES.get(lang_key)
+    if entry is None:
+        raise ValueError(f"No Google voice mapping for language: {language!r}")
+    lang_code, voice_name = entry
+    payload = json.dumps({
+        "input": {"text": text},
+        "voice": {"languageCode": lang_code, "name": voice_name},
+        "audioConfig": {"audioEncoding": "MP3", "speakingRate": 1.0},
+    }).encode()
+    url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={api_key}"
+    req = urllib.request.Request(
+        url, data=payload, headers={"Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        result = json.loads(resp.read())
+    return base64.b64decode(result["audioContent"])
+
+
+def _openai_tts(text: str, language: str, requested_voice: str) -> bytes:
+    """Fall-back: OpenAI tts-1-hd. Uses onyx for non-Latin scripts, nova otherwise."""
+    non_latin = {
+        "fa", "persian", "farsi", "ar", "arabic", "he", "hebrew",
+        "hi", "hindi", "ur", "urdu", "zh", "chinese", "ja", "japanese",
+        "ko", "korean", "th", "thai", "vi", "vietnamese", "ru", "russian",
+        "uk", "ukrainian", "tr", "turkish",
+    }
     lang = language.lower().strip()
-    if any(lang == code or lang.startswith(code + "-") for code in _ONYX_LANGUAGES):
-        return "onyx"
-    return "nova"
+    if requested_voice in ("nova", ""):
+        voice = "onyx" if lang in non_latin else "nova"
+    else:
+        voice = requested_voice
+    audio = get_openai_client().audio.speech.create(
+        model="tts-1-hd", voice=voice, input=text
+    )
+    return audio.content
 
 
 @app.post("/speak")
 def speak_text(payload: SpeakRequest, request: Request) -> Response:
     check_app_secret(request)
     check_rate_limit(request)
-    voice = _pick_voice(payload.voice, payload.language)
-    audio = get_openai_client().audio.speech.create(
-        model="tts-1-hd",   # HD for all languages — noticeably clearer
-        voice=voice,
-        input=payload.text,
-    )
-    return Response(content=audio.content, media_type="audio/mpeg")
+
+    google_key = os.getenv("GOOGLE_TTS_API_KEY", "")
+    if google_key:
+        try:
+            audio = _google_tts(payload.text, payload.language, google_key)
+            return Response(content=audio, media_type="audio/mpeg")
+        except Exception:
+            pass  # language not in Google map or API error — fall through to OpenAI
+
+    audio = _openai_tts(payload.text, payload.language, payload.voice)
+    return Response(content=audio, media_type="audio/mpeg")
