@@ -12,6 +12,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private let client = RewriteClient()
+    private let haptic = UIImpactFeedbackGenerator(style: .light)
     private var outputLanguage = KeyboardSettings.rewriteLanguage
     private var languageButton: UIButton?
     private var statusTask: Task<Void, Never>?
@@ -26,7 +27,6 @@ final class KeyboardViewController: UIInputViewController {
     private var capsLocked = false
     private var lastShiftTapTime: Date?
     private var keyboardMode: KeyboardMode = .letters
-    private var lastRewriteCharacterCount: Int?
     private let keyPreview = KeyPreviewView()
     private let translationBanner = TranslationBannerView()
     private var bannerDismissTask: Task<Void, Never>?
@@ -54,6 +54,17 @@ final class KeyboardViewController: UIInputViewController {
     private weak var currentAIReviewView: AIReviewView?
     private var translateLangButton: UIButton?
     private var translateButton: UIButton?
+    private var keyboardRootView: UIStackView?
+
+    private var isIPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+    private var keyboardNormalHeight: CGFloat  { isIPad ? 330 : 262 }
+    private var keyboardAIHeight: CGFloat      { isIPad ? 460 : 340 }
+    private var keyboardToneHeight: CGFloat    { isIPad ? 400 : 298 }
+    private var keyRowHeight: CGFloat          { isIPad ? 60  : 47  }
+    private var actionRowHeight: CGFloat       { isIPad ? 46  : 38  }
+    private var buttonHeight: CGFloat          { isIPad ? 56  : 44  }
+    private var letterFontSize: CGFloat        { isIPad ? 26  : 24  }
+    private var sideButtonWidth: CGFloat       { isIPad ? 72  : 58  }
 
     private static func dynamicColor(light: UIColor, dark: UIColor) -> UIColor {
         UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light }
@@ -109,26 +120,78 @@ final class KeyboardViewController: UIInputViewController {
         ])
     ]
 
-    private let languages = [
-        "Auto", "English", "Spanish", "French", "German", "Italian", "Portuguese", "Dutch",
-        "Swedish", "Norwegian", "Danish", "Finnish", "Icelandic", "Irish", "Welsh",
-        "Polish", "Czech", "Slovak", "Hungarian", "Romanian", "Bulgarian", "Croatian",
-        "Serbian", "Slovenian", "Greek", "Turkish", "Russian", "Ukrainian", "Hebrew",
-        "Arabic", "Persian", "Urdu", "Hindi", "Bengali", "Punjabi", "Gujarati",
-        "Tamil", "Telugu", "Malayalam", "Kannada", "Marathi", "Nepali", "Sinhala",
-        "Chinese Simplified", "Chinese Traditional", "Japanese", "Korean", "Vietnamese",
-        "Thai", "Indonesian", "Malay", "Filipino", "Swahili", "Amharic", "Yoruba",
-        "Igbo", "Hausa", "Zulu", "Afrikaans", "Albanian", "Armenian", "Azerbaijani",
-        "Basque", "Catalan", "Estonian", "Georgian", "Kazakh", "Latvian", "Lithuanian",
-        "Macedonian", "Mongolian", "Pashto", "Somali", "Tagalog"
+    private let languages: [String] = {
+        let all = [
+            "Afrikaans", "Albanian", "Amharic", "Arabic", "Armenian", "Azerbaijani",
+            "Basque", "Bengali", "Bulgarian",
+            "Catalan", "Chinese Simplified", "Chinese Traditional", "Croatian", "Czech",
+            "Danish", "Dutch",
+            "English", "Estonian",
+            "Filipino", "Finnish", "French",
+            "Georgian", "German", "Greek", "Gujarati",
+            "Hausa", "Hebrew", "Hindi", "Hungarian",
+            "Icelandic", "Igbo", "Indonesian", "Irish", "Italian",
+            "Japanese",
+            "Kannada", "Kazakh", "Korean",
+            "Latvian", "Lithuanian",
+            "Macedonian", "Malay", "Malayalam", "Marathi", "Mongolian",
+            "Nepali", "Norwegian",
+            "Pashto", "Persian", "Polish", "Portuguese", "Punjabi",
+            "Romanian", "Russian",
+            "Serbian", "Sinhala", "Slovak", "Slovenian", "Somali", "Spanish", "Swahili", "Swedish",
+            "Tagalog", "Tamil", "Telugu", "Thai", "Turkish",
+            "Ukrainian", "Urdu",
+            "Vietnamese",
+            "Welsh",
+            "Yoruba",
+            "Zulu"
+        ]
+        return ["Auto"] + all
+    }()
+
+    private let languageFlags: [String: String] = [
+        "Auto": "🌐",
+        "Afrikaans": "🇿🇦", "Albanian": "🇦🇱", "Amharic": "🇪🇹", "Arabic": "🇸🇦",
+        "Armenian": "🇦🇲", "Azerbaijani": "🇦🇿",
+        "Basque": "🇪🇸", "Bengali": "🇧🇩", "Bulgarian": "🇧🇬",
+        "Catalan": "🇪🇸", "Chinese Simplified": "🇨🇳", "Chinese Traditional": "🇹🇼",
+        "Croatian": "🇭🇷", "Czech": "🇨🇿",
+        "Danish": "🇩🇰", "Dutch": "🇳🇱",
+        "English": "🇺🇸", "Estonian": "🇪🇪",
+        "Filipino": "🇵🇭", "Finnish": "🇫🇮", "French": "🇫🇷",
+        "Georgian": "🇬🇪", "German": "🇩🇪", "Greek": "🇬🇷", "Gujarati": "🇮🇳",
+        "Hausa": "🇳🇬", "Hebrew": "🇮🇱", "Hindi": "🇮🇳", "Hungarian": "🇭🇺",
+        "Icelandic": "🇮🇸", "Igbo": "🇳🇬", "Indonesian": "🇮🇩", "Irish": "🇮🇪", "Italian": "🇮🇹",
+        "Japanese": "🇯🇵",
+        "Kannada": "🇮🇳", "Kazakh": "🇰🇿", "Korean": "🇰🇷",
+        "Latvian": "🇱🇻", "Lithuanian": "🇱🇹",
+        "Macedonian": "🇲🇰", "Malay": "🇲🇾", "Malayalam": "🇮🇳", "Marathi": "🇮🇳", "Mongolian": "🇲🇳",
+        "Nepali": "🇳🇵", "Norwegian": "🇳🇴",
+        "Pashto": "🇦🇫", "Persian": "🇮🇷", "Polish": "🇵🇱", "Portuguese": "🇵🇹", "Punjabi": "🇮🇳",
+        "Romanian": "🇷🇴", "Russian": "🇷🇺",
+        "Serbian": "🇷🇸", "Sinhala": "🇱🇰", "Slovak": "🇸🇰", "Slovenian": "🇸🇮",
+        "Somali": "🇸🇴", "Spanish": "🇪🇸", "Swahili": "🇰🇪", "Swedish": "🇸🇪",
+        "Tagalog": "🇵🇭", "Tamil": "🇮🇳", "Telugu": "🇮🇳", "Thai": "🇹🇭", "Turkish": "🇹🇷",
+        "Ukrainian": "🇺🇦", "Urdu": "🇵🇰",
+        "Vietnamese": "🇻🇳",
+        "Welsh": "🏴󠁧󠁢󠁷󠁬󠁳󠁿",
+        "Yoruba": "🇳🇬",
+        "Zulu": "🇿🇦",
     ]
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        keyboardHeightConstraint = view.heightAnchor.constraint(equalToConstant: 262)
+        keyboardHeightConstraint = view.heightAnchor.constraint(equalToConstant: keyboardNormalHeight)
         keyboardHeightConstraint?.priority = .defaultHigh
         keyboardHeightConstraint?.isActive = true
         setupKeyboard()
+        warmUpServer()
+        haptic.prepare()
+    }
+
+    private func warmUpServer() {
+        guard let url = URL(string: "https://refinekeyboard-api.onrender.com/health") else { return }
+        URLSession.shared.dataTask(with: url).resume()
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -146,6 +209,7 @@ final class KeyboardViewController: UIInputViewController {
         root.spacing = 8
         root.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(root)
+        keyboardRootView = root
 
         NSLayoutConstraint.activate([
             root.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 4),
@@ -159,7 +223,7 @@ final class KeyboardViewController: UIInputViewController {
         actionRow.axis = .horizontal
         actionRow.spacing = 6
         actionRow.distribution = .fill
-        actionRow.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        actionRow.heightAnchor.constraint(equalToConstant: actionRowHeight).isActive = true
 
         // AI box
         let aiBox = UIView()
@@ -168,7 +232,7 @@ final class KeyboardViewController: UIInputViewController {
         aiBox.layer.masksToBounds = true
         aiBox.layer.borderWidth = 0.5
         aiBox.layer.borderColor = UIColor.separator.withAlphaComponent(0.5).cgColor
-        aiBox.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        aiBox.widthAnchor.constraint(equalToConstant: isIPad ? 80 : 64).isActive = true
         let aiBtn = UIButton(type: .system)
         let aiSym = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
         aiBtn.setImage(UIImage(systemName: "sparkles", withConfiguration: aiSym), for: .normal)
@@ -191,11 +255,11 @@ final class KeyboardViewController: UIInputViewController {
             langTitle: languageDisplayTitle(),
             actionIcon: toneIconName(for: currentTone),
             actionTitle: toneName(for: currentTone),
-            showsChevron: true
+            showsChevron: true,
+            langBtnWidth: isIPad ? 88 : 68
         )
         languageButton = langBtn1
-        langBtn1.menu = makeRewriteLanguageMenu()
-        langBtn1.showsMenuAsPrimaryAction = true
+        langBtn1.addTarget(self, action: #selector(showRewriteLanguagePicker), for: .touchUpInside)
         toneButton = toneBtn1
         toneBtn1.menu = makeToneMenu()
         toneBtn1.addAction(UIAction { [weak self] _ in
@@ -208,11 +272,11 @@ final class KeyboardViewController: UIInputViewController {
             langTitle: translateLanguageDisplayTitle(),
             actionIcon: "character.bubble.fill",
             actionTitle: "Translate",
-            showsChevron: false
+            showsChevron: false,
+            langBtnWidth: isIPad ? 88 : 68
         )
         translateLangButton = trLangBtn2
-        trLangBtn2.menu = makeTranslateLanguageMenu()
-        trLangBtn2.showsMenuAsPrimaryAction = true
+        trLangBtn2.addTarget(self, action: #selector(showTranslateLanguagePicker), for: .touchUpInside)
         translateButton = trBtn2
         trBtn2.addAction(UIAction { [weak self] _ in
             self?.translateSelectedText()
@@ -221,7 +285,13 @@ final class KeyboardViewController: UIInputViewController {
         actionRow.addArrangedSubview(aiBox)
         actionRow.addArrangedSubview(box1)
         actionRow.addArrangedSubview(box2)
-        box1.widthAnchor.constraint(equalToConstant: 164).isActive = true
+        // On iPad the screen is much wider — share remaining space equally between the two boxes.
+        // On iPhone fix box1 so box2 fills the rest (original behaviour).
+        if isIPad {
+            box1.widthAnchor.constraint(equalTo: box2.widthAnchor).isActive = true
+        } else {
+            box1.widthAnchor.constraint(equalToConstant: 164).isActive = true
+        }
         root.addArrangedSubview(actionRow)
 
         keyboardStack.axis = .vertical
@@ -267,8 +337,8 @@ final class KeyboardViewController: UIInputViewController {
         currentAIReviewView = nil
         customToneDisplayLabel = nil
         customToneNameLabel = nil
-        keyboardHeightConstraint?.constant = keyboardMode == .aiReview ? 340
-                                           : keyboardMode == .customToneInput ? 298 : 262
+        keyboardHeightConstraint?.constant = keyboardMode == .aiReview ? keyboardAIHeight
+                                           : keyboardMode == .customToneInput ? keyboardToneHeight : keyboardNormalHeight
 
         switch keyboardMode {
         case .letters:         renderLetterKeyboard()
@@ -289,13 +359,13 @@ final class KeyboardViewController: UIInputViewController {
 
     private func makeLetterFastRow(_ letters: String, sideInset: CGFloat = 0) -> FastKeyRow {
         let row = FastKeyRow(sideInset: sideInset, background: letterKeyBackground)
-        row.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        row.heightAnchor.constraint(equalToConstant: keyRowHeight).isActive = true
         row.keyPreview = keyPreview
         row.previewContainer = view
         for char in letters {
             let base = String(char)
             let display = (isShifted || capsLocked) ? base.uppercased() : base.lowercased()
-            row.addKey(base: base, display: display) { [weak self] in
+            row.addKey(base: base, display: display, font: .systemFont(ofSize: letterFontSize, weight: .regular)) { [weak self] in
                 guard let self else { return }
                 self.insertUserText((self.isShifted || self.capsLocked) ? base.uppercased() : base.lowercased())
                 if self.isShifted && !self.capsLocked {
@@ -343,8 +413,17 @@ final class KeyboardViewController: UIInputViewController {
         commandRow.spacing = 6
         commandRow.distribution = .fill
 
+        if needsInputModeSwitchKey {
+            let globe = makeSystemButton(title: "")
+            let sym = UIImage.SymbolConfiguration(pointSize: 16, weight: .light)
+            globe.setImage(UIImage(systemName: "globe", withConfiguration: sym), for: .normal)
+            globe.widthAnchor.constraint(equalToConstant: sideButtonWidth).isActive = true
+            globe.addTarget(self, action: #selector(advanceToNextInputMode), for: .touchUpInside)
+            commandRow.addArrangedSubview(globe)
+        }
+
         let mode = makeSystemButton(title: modeTitle)
-        mode.widthAnchor.constraint(equalToConstant: 58).isActive = true
+        mode.widthAnchor.constraint(equalToConstant: sideButtonWidth).isActive = true
         addTapAction(to: mode) { [weak self] in
             guard let self else { return }
             self.keyboardMode = modeTitle == "ABC" ? .letters : .numbers
@@ -353,7 +432,7 @@ final class KeyboardViewController: UIInputViewController {
         commandRow.addArrangedSubview(mode)
 
         let emoji = makeSystemButton(title: "☺")
-        emoji.widthAnchor.constraint(equalToConstant: 50).isActive = true
+        emoji.widthAnchor.constraint(equalToConstant: isIPad ? 62 : 50).isActive = true
         addTapAction(to: emoji) { [weak self] in
             guard let self else { return }
             self.keyboardMode = .emoji
@@ -368,7 +447,7 @@ final class KeyboardViewController: UIInputViewController {
         commandRow.addArrangedSubview(space)
 
         let enter = makeSystemButton(title: "return")
-        enter.widthAnchor.constraint(equalToConstant: 82).isActive = true
+        enter.widthAnchor.constraint(equalToConstant: isIPad ? 100 : 82).isActive = true
         addCharacterAction(to: enter) { [weak self] in
             self?.insertCharacter("\n")
         }
@@ -378,8 +457,15 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func triggerAIReview() {
+        if keyboardMode == .aiReview {
+            stopSpeaking()
+            keyboardMode = .letters
+            renderKeyboard()
+            return
+        }
+
         guard hasFullAccess else { showStatus("Enable Full Access"); return }
-        guard KeyboardSettings.isSubscriptionActive else { showStatus("Subscribe in app"); return }
+        guard KeyboardSettings.canUseAI else { showStatus("Subscribe in app"); return }
 
         let selected = textDocumentProxy.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         aiUsingSelection = !selected.isEmpty
@@ -404,6 +490,39 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func runAIRefine(tone: RewriteMode, customInstruction: String = "") {
+        guard KeyboardSettings.canUseAI else {
+            currentAIReviewView?.showError("Subscribe in app to continue")
+            return
+        }
+        KeyboardSettings.consumeFreeUse()
+        let remaining = KeyboardSettings.freeUsesRemaining
+        if !KeyboardSettings.isSubscriptionActive && remaining == 0 {
+            showStatus("Last free rewrite used — Subscribe in app")
+        } else if !KeyboardSettings.isSubscriptionActive {
+            showStatus("\(remaining) free rewrite\(remaining == 1 ? "" : "s") left")
+        }
+
+        // Re-read whatever is in the text box right now — no cursor movement so
+        // there are no proxy side-effects while the AI panel is open.
+        if aiUsingSelection {
+            let fresh = textDocumentProxy.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !fresh.isEmpty {
+                aiOriginalText  = fresh
+                aiContextBefore = ""
+                aiContextAfter  = ""
+            }
+        } else {
+            let before = textDocumentProxy.documentContextBeforeInput ?? ""
+            let after  = textDocumentProxy.documentContextAfterInput ?? ""
+            let fresh  = (before + after).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !fresh.isEmpty {
+                aiOriginalText  = fresh
+                aiContextBefore = before
+                aiContextAfter  = after
+            }
+        }
+        currentAIReviewView?.showOriginalText(aiOriginalText)
+
         aiTranslatedText = nil
         currentAIReviewView?.setLoading(true)
         Task { [weak self] in
@@ -513,14 +632,30 @@ final class KeyboardViewController: UIInputViewController {
             self.stopSpeaking()
             let textToInsert = self.aiRefinedText.isEmpty ? self.aiOriginalText : self.aiRefinedText
             guard !textToInsert.isEmpty else { return }
-            if self.aiUsingSelection {
-                self.textDocumentProxy.insertText(textToInsert)
-                self.lastRewriteCharacterCount = nil
-            } else {
-                self.replaceCurrentDraft(contextBeforeInput: self.aiContextBefore,
-                                         contextAfterInput: self.aiContextAfter,
-                                         refined: textToInsert)
+
+            // Read context FIRST (synchronous) before issuing any cursor-movement calls.
+            // documentContextBeforeInput can return a truncated/paragraph-only slice, so we
+            // take the max of every known text-length source plus a safety buffer.
+            // Extra deleteBackward calls when cursor is at position 0 are safe no-ops.
+            let freshBefore = self.textDocumentProxy.documentContextBeforeInput ?? ""
+            let freshAfter  = self.textDocumentProxy.documentContextAfterInput ?? ""
+            let deleteCount = max(
+                freshBefore.count + freshAfter.count,
+                self.aiContextBefore.count + self.aiContextAfter.count,
+                self.aiOriginalText.count
+            ) + 100
+
+            // Queue in FIFO order in the host-app run loop:
+            //   1. move past any trailing text → absolute end
+            //   2. delete the whole original text
+            //   3. insert the refined text
+            if !freshAfter.isEmpty {
+                self.textDocumentProxy.adjustTextPosition(byCharacterOffset: freshAfter.count)
             }
+            self.textDocumentProxy.adjustTextPosition(byCharacterOffset: 100_000)
+            (0..<deleteCount).forEach { _ in self.textDocumentProxy.deleteBackward() }
+            self.textDocumentProxy.insertText(textToInsert)
+
             self.keyboardMode = .letters
             self.renderKeyboard()
         }
@@ -831,7 +966,7 @@ final class KeyboardViewController: UIInputViewController {
 
     private func makeTextRow(_ keys: [String]) -> FastKeyRow {
         let row = FastKeyRow(sideInset: 0, background: letterKeyBackground)
-        row.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        row.heightAnchor.constraint(equalToConstant: keyRowHeight).isActive = true
         row.keyPreview = keyPreview
         row.previewContainer = view
         keys.forEach { key in
@@ -845,7 +980,7 @@ final class KeyboardViewController: UIInputViewController {
         row.distribution = .fill
 
         let corner = makeSystemButton(title: cornerTitle)
-        corner.widthAnchor.constraint(equalToConstant: 58).isActive = true
+        corner.widthAnchor.constraint(equalToConstant: sideButtonWidth).isActive = true
         addTapAction(to: corner, action: cornerAction)
         row.addArrangedSubview(corner)
 
@@ -853,7 +988,7 @@ final class KeyboardViewController: UIInputViewController {
         row.addArrangedSubview(keysRow)
 
         let delete = makeSystemButton(title: nil, imageName: "delete.left")
-        delete.widthAnchor.constraint(equalToConstant: 58).isActive = true
+        delete.widthAnchor.constraint(equalToConstant: sideButtonWidth).isActive = true
         addDeleteAction(to: delete)
         row.addArrangedSubview(delete)
 
@@ -923,7 +1058,7 @@ final class KeyboardViewController: UIInputViewController {
         row.distribution = .fill
 
         let shift = makeSystemButton(title: nil, imageName: "shift")
-        shift.widthAnchor.constraint(equalToConstant: 58).isActive = true
+        shift.widthAnchor.constraint(equalToConstant: sideButtonWidth).isActive = true
         shiftButton = shift
         addTapAction(to: shift) { [weak self] in
             guard let self else { return }
@@ -949,7 +1084,7 @@ final class KeyboardViewController: UIInputViewController {
         row.addArrangedSubview(makeLetterFastRow("zxcvbnm"))
 
         let delete = makeSystemButton(title: nil, imageName: "delete.left")
-        delete.widthAnchor.constraint(equalToConstant: 58).isActive = true
+        delete.widthAnchor.constraint(equalToConstant: sideButtonWidth).isActive = true
         addDeleteAction(to: delete)
         row.addArrangedSubview(delete)
 
@@ -1048,6 +1183,8 @@ final class KeyboardViewController: UIInputViewController {
         langBtn.setImage(UIImage(systemName: langIcon, withConfiguration: smallSym), for: .normal)
         langBtn.setTitle(" \(langTitle)", for: .normal)
         langBtn.titleLabel?.font = .systemFont(ofSize: 12, weight: .medium)
+        langBtn.titleLabel?.lineBreakMode = .byTruncatingTail
+        langBtn.contentHorizontalAlignment = .center
         langBtn.tintColor = .secondaryLabel
         langBtn.setTitleColor(.secondaryLabel, for: .normal)
         langBtn.translatesAutoresizingMaskIntoConstraints = false
@@ -1063,6 +1200,8 @@ final class KeyboardViewController: UIInputViewController {
         actionBtn.setImage(UIImage(systemName: actionIcon, withConfiguration: actionSym), for: .normal)
         actionBtn.setTitle(" \(actionTitle)", for: .normal)
         actionBtn.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+        actionBtn.titleLabel?.lineBreakMode = .byTruncatingTail
+        actionBtn.contentHorizontalAlignment = .center
         actionBtn.tintColor = .label
         actionBtn.setTitleColor(.label, for: .normal)
         actionBtn.translatesAutoresizingMaskIntoConstraints = false
@@ -1122,7 +1261,7 @@ final class KeyboardViewController: UIInputViewController {
         button.layer.shadowOpacity = 0.3
         button.layer.shadowOffset = CGSize(width: 0, height: 1)
         button.layer.shadowRadius = 0
-        button.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        button.heightAnchor.constraint(equalToConstant: buttonHeight).isActive = true
         if showsPreview {
             addKeyPreview(to: button)
         } else {
@@ -1152,7 +1291,7 @@ final class KeyboardViewController: UIInputViewController {
         button.layer.shadowOpacity = 0.3
         button.layer.shadowOffset = CGSize(width: 0, height: 1)
         button.layer.shadowRadius = 0
-        button.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        button.heightAnchor.constraint(equalToConstant: buttonHeight).isActive = true
         addPressFeedback(to: button)
         return button
     }
@@ -1175,6 +1314,8 @@ final class KeyboardViewController: UIInputViewController {
 
     private func addDeleteAction(to button: UIButton) {
         button.addAction(UIAction { [weak self] _ in
+            self?.haptic.impactOccurred()
+            self?.haptic.prepare()
             self?.deleteCharacter()
             self?.startDeleteRepeat()
         }, for: .touchDown)
@@ -1230,8 +1371,22 @@ final class KeyboardViewController: UIInputViewController {
             }
             return
         }
-        lastRewriteCharacterCount = nil
         textDocumentProxy.insertText(text)
+        autoCapitalizeIfNeeded(after: text)
+    }
+
+    private func autoCapitalizeIfNeeded(after inserted: String) {
+        guard !capsLocked else { return }
+        let before = textDocumentProxy.documentContextBeforeInput ?? ""
+        let trimmed = before.trimmingCharacters(in: .init(charactersIn: " \n"))
+        let atStart = trimmed.isEmpty
+            || trimmed.hasSuffix(".") || trimmed.hasSuffix("!") || trimmed.hasSuffix("?")
+        if atStart {
+            if !isShifted { isShifted = true; refreshLetterCasing() }
+        } else if inserted.rangeOfCharacter(from: .letters) != nil, isShifted, !atStart {
+            isShifted = false
+            refreshLetterCasing()
+        }
     }
 
     private func deleteUserText() {
@@ -1246,7 +1401,6 @@ final class KeyboardViewController: UIInputViewController {
             }
             return
         }
-        lastRewriteCharacterCount = nil
         textDocumentProxy.deleteBackward()
     }
 
@@ -1267,8 +1421,10 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func addPressFeedback(to button: UIButton) {
-        button.addAction(UIAction { [weak button] _ in
+        button.addAction(UIAction { [weak self, weak button] _ in
             button?.alpha = 0.72
+            self?.haptic.impactOccurred()
+            self?.haptic.prepare()
         }, for: .touchDown)
         button.addAction(UIAction { [weak button] _ in
             button?.alpha = 1
@@ -1287,14 +1443,12 @@ final class KeyboardViewController: UIInputViewController {
         let sym = UIImage.SymbolConfiguration(pointSize: 10, weight: .medium)
         languageButton?.setImage(UIImage(systemName: "globe", withConfiguration: sym), for: .normal)
         languageButton?.setTitle(" \(languageDisplayTitle())", for: .normal)
-        languageButton?.menu = makeRewriteLanguageMenu()
     }
 
     private func updateTranslateLangButton() {
         let sym = UIImage.SymbolConfiguration(pointSize: 10, weight: .medium)
         translateLangButton?.setImage(UIImage(systemName: "arrow.right.circle.fill", withConfiguration: sym), for: .normal)
         translateLangButton?.setTitle(" \(translateLanguageDisplayTitle())", for: .normal)
-        translateLangButton?.menu = makeTranslateLanguageMenu()
     }
 
     private func updateTranslateButton() {
@@ -1387,37 +1541,42 @@ final class KeyboardViewController: UIInputViewController {
         return codes[language] ?? String(language.prefix(2)).uppercased()
     }
 
-    private func makeRewriteLanguageMenu() -> UIMenu {
-        let actions = languages.map { language in
-            UIAction(title: language, state: language == outputLanguage ? .on : .off) { [weak self] _ in
-                guard let self else { return }
-                self.outputLanguage = language
-                KeyboardSettings.sharedDefaults.set(language, forKey: KeyboardSettings.languageKey)
-                self.updateLanguageButtonTitle()
-                self.showStatus(language == "Auto" ? "Rewrite: Auto" : "Rewrite → \(self.languageCode(for: language))")
-                let code = language == "Auto" ? "Auto" : self.languageCode(for: language)
-                self.currentAIReviewView?.updateSourceLang(code: code)
-            }
+    @objc private func showRewriteLanguagePicker() {
+        LanguagePickerOverlay.show(
+            in: view,
+            title: "Rewrite Language",
+            languages: languages,
+            flags: languageFlags,
+            current: outputLanguage
+        ) { [weak self] selected in
+            guard let self else { return }
+            self.outputLanguage = selected
+            KeyboardSettings.sharedDefaults.set(selected, forKey: KeyboardSettings.languageKey)
+            self.updateLanguageButtonTitle()
+            self.showStatus(selected == "Auto" ? "Rewrite: Auto" : "Rewrite → \(self.languageCode(for: selected))")
+            let code = selected == "Auto" ? "Auto" : self.languageCode(for: selected)
+            self.currentAIReviewView?.updateSourceLang(code: code)
         }
-        return UIMenu(title: "Rewrite Language", children: actions)
     }
 
-    private func makeTranslateLanguageMenu() -> UIMenu {
-        let current = KeyboardSettings.translateLanguage
-        let actions = languages.filter { $0 != "Auto" }.map { language in
-            UIAction(title: language, state: language == current ? .on : .off) { [weak self] _ in
-                guard let self else { return }
-                KeyboardSettings.sharedDefaults.set(language, forKey: KeyboardSettings.translateLanguageKey)
-                self.updateTranslateLangButton()
-                self.showTranslateStatus("→ \(self.languageCode(for: language))")
-                // Keep AI review voice button in sync and clear stale translation cache
-                let code = self.languageCode(for: language)
-                self.currentAIReviewView?.updateTargetLang(code: code)
-                self.aiTranslatedText = nil
-                self.stopSpeaking()
-            }
+    @objc private func showTranslateLanguagePicker() {
+        let filtered = languages.filter { $0 != "Auto" }
+        LanguagePickerOverlay.show(
+            in: view,
+            title: "Translate To",
+            languages: filtered,
+            flags: languageFlags,
+            current: KeyboardSettings.translateLanguage
+        ) { [weak self] selected in
+            guard let self else { return }
+            KeyboardSettings.sharedDefaults.set(selected, forKey: KeyboardSettings.translateLanguageKey)
+            self.updateTranslateLangButton()
+            self.showTranslateStatus("→ \(self.languageCode(for: selected))")
+            let code = self.languageCode(for: selected)
+            self.currentAIReviewView?.updateTargetLang(code: code)
+            self.aiTranslatedText = nil
+            self.stopSpeaking()
         }
-        return UIMenu(title: "Translate To", children: actions)
     }
 
     private func refineCurrentText(mode: RewriteMode) {
@@ -1425,9 +1584,16 @@ final class KeyboardViewController: UIInputViewController {
             showStatus("Enable Full Access")
             return
         }
-        guard KeyboardSettings.isSubscriptionActive else {
-            showStatus("Open RefineKeyboard app to subscribe")
+        guard KeyboardSettings.canUseAI else {
+            showStatus("Subscribe in app")
             return
+        }
+        KeyboardSettings.consumeFreeUse()
+        let remaining = KeyboardSettings.freeUsesRemaining
+        if !KeyboardSettings.isSubscriptionActive && remaining == 0 {
+            showStatus("Last free rewrite used — Subscribe in app")
+        } else if !KeyboardSettings.isSubscriptionActive {
+            showStatus("\(remaining) free rewrite\(remaining == 1 ? "" : "s") left")
         }
 
         let selected = textDocumentProxy.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -1460,8 +1626,7 @@ final class KeyboardViewController: UIInputViewController {
                     } else if usingSelection {
                         // insertText replaces the active selection on iOS
                         self.textDocumentProxy.insertText(refined)
-                        self.lastRewriteCharacterCount = nil
-                        self.showStatus("Inserted")
+                                self.showStatus("Inserted")
                     } else {
                         self.replaceCurrentDraft(
                             contextBeforeInput: contextBeforeInput,
@@ -1484,9 +1649,16 @@ final class KeyboardViewController: UIInputViewController {
             showTranslateStatus("Enable Full Access")
             return
         }
-        guard KeyboardSettings.isSubscriptionActive else {
+        guard KeyboardSettings.canUseAI else {
             showTranslateStatus("Subscribe in app")
             return
+        }
+        KeyboardSettings.consumeFreeUse()
+        let remaining = KeyboardSettings.freeUsesRemaining
+        if !KeyboardSettings.isSubscriptionActive && remaining == 0 {
+            showTranslateStatus("Last free use — Subscribe in app")
+        } else if !KeyboardSettings.isSubscriptionActive {
+            showTranslateStatus("\(remaining) free rewrite\(remaining == 1 ? "" : "s") left")
         }
 
         let selected = textDocumentProxy.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -1577,14 +1749,21 @@ final class KeyboardViewController: UIInputViewController {
         let before = textDocumentProxy.documentContextBeforeInput ?? ""
         let after  = textDocumentProxy.documentContextAfterInput ?? ""
 
-        // Move to document start (clamped by system), read all text as afterInput
+        // iOS limits each documentContextAfterInput read to ~100–200 chars.
+        // Read in chunks by moving the cursor forward after each read until
+        // nothing remains. Cap at 500 iterations (~100 KB) for safety.
         textDocumentProxy.adjustTextPosition(byCharacterOffset: -100_000)
-        let fromStart = textDocumentProxy.documentContextAfterInput ?? ""
-        // Restore cursor to end
+        var collected = ""
+        for _ in 0..<500 {
+            let chunk = textDocumentProxy.documentContextAfterInput ?? ""
+            guard !chunk.isEmpty else { break }
+            collected += chunk
+            textDocumentProxy.adjustTextPosition(byCharacterOffset: chunk.count)
+        }
+        // Restore cursor to end so deletion in replaceCurrentDraft works correctly.
         textDocumentProxy.adjustTextPosition(byCharacterOffset: 100_000)
 
-        // Use whichever capture is longer — from-start wins for long messages
-        let raw = fromStart.count > before.count + after.count ? fromStart : before + after
+        let raw = collected.count > before.count + after.count ? collected : before + after
         return (raw, raw.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
@@ -1593,13 +1772,11 @@ final class KeyboardViewController: UIInputViewController {
         if !contextAfterInput.isEmpty {
             textDocumentProxy.adjustTextPosition(byCharacterOffset: contextAfterInput.count)
         }
-        let availableDraftCount = contextBeforeInput.count + contextAfterInput.count
-        let deletionCount = max(availableDraftCount, lastRewriteCharacterCount ?? 0)
+        let deletionCount = contextBeforeInput.count + contextAfterInput.count
         (0..<deletionCount).forEach { _ in
             textDocumentProxy.deleteBackward()
         }
         textDocumentProxy.insertText(refined)
-        lastRewriteCharacterCount = refined.count
     }
 }
 
@@ -1622,6 +1799,7 @@ private final class FastKeyRow: UIView {
     private let sideInset: CGFloat
     private let keyBackground: UIColor
     private let keySpacing: CGFloat = 5
+    private let haptic = UIImpactFeedbackGenerator(style: .light)
 
     init(sideInset: CGFloat = 0, background: UIColor) {
         self.sideInset = sideInset
@@ -1631,6 +1809,11 @@ private final class FastKeyRow: UIView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { haptic.prepare() }
+    }
 
     func addKey(
         base: String,
@@ -1676,15 +1859,16 @@ private final class FastKeyRow: UIView {
         }
     }
 
-    // Expand the touch area 4pt above and below so touches in inter-row gaps register.
+    // Expand 5pt above and below so row coverage fully bridges the 6pt inter-row gap.
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        bounds.insetBy(dx: 0, dy: -4).contains(point)
+        bounds.insetBy(dx: 0, dy: -5).contains(point)
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let pt = touches.first?.location(in: self), !keys.isEmpty else { return }
         let key = nearest(to: pt)
-        // Preview fires first for immediate visual feedback before the XPC insertText call.
+        haptic.impactOccurred()
+        haptic.prepare()
         if let preview = keyPreview, let container = previewContainer {
             preview.show(character: key.label.text ?? "", above: convert(key.frame, to: container), in: container)
         }
@@ -1905,11 +2089,13 @@ final class AIReviewView: UIView {
         updateToneButtons()
 
         // ── Layout ───────────────────────────────────────────────────
+        // diffTextView grows to absorb any extra height; everything below it is fixed size
+        // and chained top-to-bottom so layout is unambiguous at any view height.
         NSLayoutConstraint.activate([
             diffTextView.topAnchor.constraint(equalTo: topAnchor, constant: 4),
             diffTextView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             diffTextView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-            diffTextView.heightAnchor.constraint(equalToConstant: 104),
+            diffTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 80),
 
             loadingLabel.centerXAnchor.constraint(equalTo: diffTextView.centerXAnchor),
             loadingLabel.centerYAnchor.constraint(equalTo: diffTextView.centerYAnchor),
@@ -1917,12 +2103,12 @@ final class AIReviewView: UIView {
             toneRow1.topAnchor.constraint(equalTo: diffTextView.bottomAnchor, constant: 6),
             toneRow1.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             toneRow1.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-            toneRow1.heightAnchor.constraint(equalToConstant: 26),
+            toneRow1.heightAnchor.constraint(equalToConstant: 30),
 
             toneRow2.topAnchor.constraint(equalTo: toneRow1.bottomAnchor, constant: 5),
             toneRow2.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             toneRow2.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-            toneRow2.heightAnchor.constraint(equalToConstant: 26),
+            toneRow2.heightAnchor.constraint(equalToConstant: 30),
 
             savedToneRow.topAnchor.constraint(equalTo: toneRow2.bottomAnchor, constant: 5),
             savedToneRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
@@ -1932,12 +2118,14 @@ final class AIReviewView: UIView {
             customBtn.topAnchor.constraint(equalTo: savedToneRow.bottomAnchor, constant: 5),
             customBtn.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             customBtn.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-            customBtn.heightAnchor.constraint(equalToConstant: 26),
+            customBtn.heightAnchor.constraint(equalToConstant: 30),
 
+            // Chain customBtn to bottomBar so the full top-to-bottom layout is unambiguous.
+            bottomBar.topAnchor.constraint(equalTo: customBtn.bottomAnchor, constant: 6),
             bottomBar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             bottomBar.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
             bottomBar.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
-            bottomBar.heightAnchor.constraint(equalToConstant: 32),
+            bottomBar.heightAnchor.constraint(equalToConstant: 36),
         ])
     }
 
@@ -2281,5 +2469,154 @@ final class TranslationBannerView: UIView {
         // Let the close button handle its own tap
         guard !closeButton.frame.contains(gr.location(in: self)) else { return }
         onTap?()
+    }
+}
+
+// MARK: - Language Picker Overlay
+
+private final class LanguagePickerOverlay: UIView,
+                                            UITableViewDataSource,
+                                            UITableViewDelegate {
+
+    private let allLanguages: [String]
+    private let flagEmoji: [String: String]
+    private var flagImages: [String: UIImage] = [:]
+    private let currentSelection: String
+    private let onSelect: (String) -> Void
+    private let tableView = UITableView(frame: .zero, style: .plain)
+    private let titleLabel = UILabel()
+
+    // MARK: - Factory
+
+    static func show(in parent: UIView, title: String,
+                     languages: [String], flags: [String: String], current: String,
+                     onSelect: @escaping (String) -> Void) {
+        parent.subviews.compactMap { $0 as? LanguagePickerOverlay }.forEach { $0.close() }
+
+        let picker = LanguagePickerOverlay(
+            languages: languages, flags: flags, current: current, onSelect: onSelect
+        )
+        picker.titleLabel.text = title
+        picker.frame = parent.bounds
+        picker.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        parent.addSubview(picker)
+
+        if let idx = languages.firstIndex(of: current) {
+            DispatchQueue.main.async {
+                picker.tableView.scrollToRow(
+                    at: IndexPath(row: idx, section: 0), at: .middle, animated: false
+                )
+            }
+        }
+    }
+
+    // MARK: - Init
+
+    private init(languages: [String], flags: [String: String], current: String,
+                 onSelect: @escaping (String) -> Void) {
+        self.allLanguages = languages
+        self.flagEmoji    = flags
+        self.currentSelection = current
+        self.onSelect     = onSelect
+        super.init(frame: .zero)
+        prerenderFlags(flags)
+        setup()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    // MARK: - Pre-render emoji → UIImage to avoid text-render issues in extensions
+
+    private func prerenderFlags(_ flags: [String: String]) {
+        let side: CGFloat = 26
+        let rect  = CGRect(origin: .zero, size: CGSize(width: side, height: side))
+        // AppleColorEmoji renders regional-indicator pairs correctly as a bitmap
+        let font  = UIFont(name: "AppleColorEmoji", size: 20) ?? UIFont.systemFont(ofSize: 20)
+        for (_, emoji) in flags where !emoji.isEmpty {
+            let renderer = UIGraphicsImageRenderer(size: rect.size)
+            let img = renderer.image { _ in
+                (emoji as NSString).draw(in: rect, withAttributes: [.font: font])
+            }
+            flagImages[emoji] = img
+        }
+    }
+
+    // MARK: - Setup
+
+    private func setup() {
+        backgroundColor = UIColor.systemBackground
+
+        titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        titleLabel.textColor = .secondaryLabel
+        titleLabel.textAlignment = .center
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleLabel)
+
+        let sym = UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+        let closeBtn = UIButton(type: .system)
+        closeBtn.setImage(UIImage(systemName: "xmark.circle.fill", withConfiguration: sym), for: .normal)
+        closeBtn.tintColor = .tertiaryLabel
+        closeBtn.translatesAutoresizingMaskIntoConstraints = false
+        closeBtn.addTarget(self, action: #selector(close), for: .touchUpInside)
+        addSubview(closeBtn)
+
+        tableView.dataSource = self
+        tableView.delegate   = self
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+        tableView.backgroundColor   = .systemBackground
+        tableView.rowHeight          = 42
+        tableView.isScrollEnabled    = true
+        tableView.bounces            = true
+        tableView.alwaysBounceVertical = true
+        tableView.delaysContentTouches = false
+        tableView.showsVerticalScrollIndicator = true
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(tableView)
+
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            titleLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+
+            closeBtn.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            closeBtn.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+
+            tableView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2),
+            tableView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            tableView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    // MARK: - Dismiss
+
+    @objc func close() {
+        removeFromSuperview()
+    }
+
+    // MARK: - UITableViewDataSource
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        allLanguages.count
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
+        let lang = allLanguages[indexPath.row]
+        let emoji = flagEmoji[lang] ?? ""
+        // Use legacy textLabel / imageView — simplest path, no UIListContentConfiguration quirks
+        cell.textLabel?.text = lang
+        cell.textLabel?.font = .systemFont(ofSize: 15)
+        cell.imageView?.image = emoji.isEmpty ? nil : flagImages[emoji]
+        cell.backgroundColor = .systemBackground
+        cell.accessoryType   = lang == currentSelection ? .checkmark : .none
+        return cell
+    }
+
+    // MARK: - UITableViewDelegate
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        onSelect(allLanguages[indexPath.row])
+        close()
     }
 }

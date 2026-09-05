@@ -10,6 +10,8 @@ enum KeyboardSettings {
     static let endpointKey           = "rewriteEndpoint"
     static let languageKey           = "rewriteLanguage"
     static let subscriptionActiveKey = "subscriptionActive"
+    static let freeUsageCountKey     = "freeAIUsageCount"
+    static let freeUsageLimit        = 5
     static let productionEndpoint    = "https://refinekeyboard-api.onrender.com/refine"
     static let speakEndpoint         = "https://refinekeyboard-api.onrender.com/speak"
     static let appSecret             = "rkp_f863dcf9d283f019826616eb9461bb20c258faf0"
@@ -35,6 +37,21 @@ enum KeyboardSettings {
 
     static var isSubscriptionActive: Bool {
         sharedDefaults.bool(forKey: subscriptionActiveKey)
+    }
+
+    static var freeUsesRemaining: Int {
+        let used = sharedDefaults.integer(forKey: freeUsageCountKey)
+        return max(0, freeUsageLimit - used)
+    }
+
+    static var canUseAI: Bool {
+        isSubscriptionActive || freeUsesRemaining > 0
+    }
+
+    static func consumeFreeUse() {
+        guard !isSubscriptionActive else { return }
+        let used = sharedDefaults.integer(forKey: freeUsageCountKey)
+        sharedDefaults.set(used + 1, forKey: freeUsageCountKey)
     }
 
     static var savedTones: [SavedTone] {

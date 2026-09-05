@@ -48,7 +48,6 @@ final class KeyPreviewView: UIView {
         let y = keyFrame.minY - height + 6
 
         frame = CGRect(x: x, y: y, width: width, height: height)
-        containerView.bringSubviewToFront(self)
         isHidden = false
     }
 

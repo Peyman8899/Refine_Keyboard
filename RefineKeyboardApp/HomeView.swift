@@ -227,12 +227,67 @@ private struct FeatureItem: View {
 // MARK: - Language Settings
 
 private struct LanguageSettingsView: View {
-    private let languages = ["Auto", "English", "Spanish", "French", "German", "Italian",
-                             "Portuguese", "Dutch", "Swedish", "Norwegian", "Danish", "Finnish",
-                             "Polish", "Czech", "Hungarian", "Romanian", "Greek", "Turkish",
-                             "Russian", "Ukrainian", "Hebrew", "Arabic", "Persian", "Hindi",
-                             "Chinese Simplified", "Chinese Traditional", "Japanese", "Korean",
-                             "Vietnamese", "Thai", "Indonesian", "Filipino"]
+    private let languages: [String] = {
+        let all = [
+            "Afrikaans", "Albanian", "Amharic", "Arabic", "Armenian", "Azerbaijani",
+            "Basque", "Bengali", "Bulgarian",
+            "Catalan", "Chinese Simplified", "Chinese Traditional", "Croatian", "Czech",
+            "Danish", "Dutch",
+            "English", "Estonian",
+            "Filipino", "Finnish", "French",
+            "Georgian", "German", "Greek", "Gujarati",
+            "Hausa", "Hebrew", "Hindi", "Hungarian",
+            "Icelandic", "Indonesian", "Italian",
+            "Japanese",
+            "Kannada", "Kazakh", "Korean",
+            "Latvian", "Lithuanian",
+            "Macedonian", "Malay", "Malayalam", "Marathi", "Mongolian",
+            "Nepali", "Norwegian",
+            "Persian", "Polish", "Portuguese", "Punjabi",
+            "Romanian", "Russian",
+            "Serbian", "Slovak", "Slovenian", "Spanish", "Swahili", "Swedish",
+            "Tamil", "Telugu", "Thai", "Turkish",
+            "Ukrainian", "Urdu",
+            "Vietnamese",
+            "Yoruba", "Zulu"
+        ]
+        return ["Auto"] + all
+    }()
+
+    private let flags: [String: String] = [
+        "Auto": "🌐",
+        "English": "🇺🇸",
+        "Spanish": "🇪🇸",
+        "French": "🇫🇷",
+        "German": "🇩🇪",
+        "Italian": "🇮🇹",
+        "Portuguese": "🇵🇹",
+        "Dutch": "🇳🇱",
+        "Swedish": "🇸🇪",
+        "Norwegian": "🇳🇴",
+        "Danish": "🇩🇰",
+        "Finnish": "🇫🇮",
+        "Polish": "🇵🇱",
+        "Czech": "🇨🇿",
+        "Hungarian": "🇭🇺",
+        "Romanian": "🇷🇴",
+        "Greek": "🇬🇷",
+        "Turkish": "🇹🇷",
+        "Russian": "🇷🇺",
+        "Ukrainian": "🇺🇦",
+        "Hebrew": "🇮🇱",
+        "Arabic": "🇸🇦",
+        "Persian": "🇮🇷",
+        "Hindi": "🇮🇳",
+        "Chinese Simplified": "🇨🇳",
+        "Chinese Traditional": "🇹🇼",
+        "Japanese": "🇯🇵",
+        "Korean": "🇰🇷",
+        "Vietnamese": "🇻🇳",
+        "Thai": "🇹🇭",
+        "Indonesian": "🇮🇩",
+        "Filipino": "🇵🇭",
+    ]
 
     @State private var selected: String = AppSettings.sharedDefaults.string(forKey: AppSettings.languageKey) ?? "Auto"
 
@@ -242,7 +297,8 @@ private struct LanguageSettingsView: View {
                 selected = lang
                 AppSettings.sharedDefaults.set(lang == "Auto" ? nil : lang, forKey: AppSettings.languageKey)
             } label: {
-                HStack {
+                HStack(spacing: 12) {
+                    Text(flags[lang] ?? "").font(.title3)
                     Text(lang).foregroundStyle(Color.primary)
                     Spacer()
                     if lang == selected {

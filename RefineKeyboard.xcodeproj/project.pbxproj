@@ -19,6 +19,9 @@
 		110000000000000000000010 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000107 /* OnboardingView.swift */; };
 		110000000000000000000011 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000108 /* PaywallView.swift */; };
 		110000000000000000000012 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000109 /* HomeView.swift */; };
+		FA00000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F310305F3004568200DACF62 /* PrivacyInfo.xcprivacy */; };
+		FA00000000000002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FA00000000000010 /* PrivacyInfo.xcprivacy */; };
+		FA00000000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FA00000000000011 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,6 +67,9 @@
 		110000000000000000000301 /* RefineKeyboard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RefineKeyboard.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		110000000000000000000302 /* RefineKeyboardExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RefineKeyboardExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F310305E2FE5EAC600DACF62 /* Products.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Products.storekit; sourceTree = "<group>"; };
+		F310305F3004568200DACF62 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		FA00000000000010 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		FA00000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -96,6 +102,8 @@
 		110000000000000000000811 /* RefineKeyboardApp */ = {
 			isa = PBXGroup;
 			children = (
+				FA00000000000011 /* Assets.xcassets */,
+				F310305F3004568200DACF62 /* PrivacyInfo.xcprivacy */,
 				F310305E2FE5EAC600DACF62 /* Products.storekit */,
 				110000000000000000000101 /* RefineKeyboardApp.swift */,
 				110000000000000000000102 /* ContentView.swift */,
@@ -113,6 +121,7 @@
 		110000000000000000000812 /* RefineKeyboardExtension */ = {
 			isa = PBXGroup;
 			children = (
+				FA00000000000010 /* PrivacyInfo.xcprivacy */,
 				110000000000000000000201 /* KeyboardViewController.swift */,
 				110000000000000000000206 /* KeyPreviewView.swift */,
 				110000000000000000000202 /* RewriteClient.swift */,
@@ -141,6 +150,7 @@
 			buildPhases = (
 				110000000000000000000711 /* Sources */,
 				110000000000000000000701 /* Frameworks */,
+				FA00000000000020 /* Resources */,
 				110000000000000000000601 /* Embed App Extensions */,
 			);
 			buildRules = (
@@ -159,6 +169,7 @@
 			buildPhases = (
 				110000000000000000000712 /* Sources */,
 				110000000000000000000702 /* Frameworks */,
+				FA00000000000021 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -205,6 +216,26 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		FA00000000000020 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FA00000000000003 /* Assets.xcassets in Resources */,
+				FA00000000000001 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FA00000000000021 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FA00000000000002 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		110000000000000000000711 /* Sources */ = {
@@ -362,6 +393,7 @@
 		110000000000000000001201 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = RefineKeyboardApp/RefineKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -384,6 +416,7 @@
 		110000000000000000001202 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = RefineKeyboardApp/RefineKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
