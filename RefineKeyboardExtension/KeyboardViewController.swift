@@ -22,8 +22,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private var keyboardHeightConstraint: NSLayoutConstraint?
     private var fastLetterRows: [FastKeyRow] = []
     private var shiftButton: UIButton?
-    private var emojiScrollView: UIScrollView?
-    private var emojiCategoryAnchors: [UIView] = []
+    private var emojiCollectionView: UICollectionView?
     private var emojiCategoryButtons: [UIButton] = []
     private var isShifted = true
     private var capsLocked = false
@@ -59,15 +58,15 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private var keyboardRootView: UIStackView?
 
     private var isIPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
-    private var keyboardNormalHeight: CGFloat  { isIPad ? 330 : 262 }
+    private var keyboardNormalHeight: CGFloat  { isIPad ? 330 : 268 }
     private var keyboardAIHeight: CGFloat      { isIPad ? 460 : 340 }
     private var keyboardToneHeight: CGFloat    { isIPad ? 400 : 298 }
-    private var keyRowHeight: CGFloat          { isIPad ? 60  : 47  }
+    private var keyRowHeight: CGFloat          { isIPad ? 60  : 45  }
     private var actionRowHeight: CGFloat       { isIPad ? 46  : 38  }
-    private var buttonHeight: CGFloat          { isIPad ? 56  : 44  }
-    private var letterFontSize: CGFloat        { isIPad ? 26  : 24  }
-    private var sideButtonWidth: CGFloat       { isIPad ? 72  : 58  }
-    private var letterSideButtonWidth: CGFloat { isIPad ? 72  : 53  }
+    private var buttonHeight: CGFloat          { isIPad ? 56  : 45  }
+    private var letterFontSize: CGFloat        { isIPad ? 30  : 26  }
+    private var sideButtonWidth: CGFloat       { isIPad ? 72  : 47  }
+    private var letterSideButtonWidth: CGFloat { isIPad ? 72  : 49  }
 
     private static func dynamicColor(light: UIColor, dark: UIColor) -> UIColor {
         UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light }
@@ -219,6 +218,13 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         warmUpServer()
     }
 
+    override func textDidChange(_ textInput: UITextInput?) {
+        super.textDidChange(textInput)
+        guard keyboardMode == .letters, !capsLocked else { return }
+        lastShiftTapTime = nil
+        syncShiftWithDocumentContext()
+    }
+
     private func warmUpServer() {
         guard let url = URL(string: "https://refinekeyboard-api.onrender.com/health") else { return }
         URLSession.shared.dataTask(with: url).resume()
@@ -242,8 +248,8 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         keyboardRootView = root
 
         NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 4),
-            root.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -4),
+            root.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 6),
+            root.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -6),
             root.topAnchor.constraint(equalTo: view.topAnchor, constant: 6),
             root.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -6)
         ])
@@ -325,7 +331,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         root.addArrangedSubview(actionRow)
 
         keyboardStack.axis = .vertical
-        keyboardStack.spacing = 6
+        keyboardStack.spacing = isIPad ? 6 : 10
         keyboardStack.translatesAutoresizingMaskIntoConstraints = false
         root.addArrangedSubview(keyboardStack)
 
@@ -360,8 +366,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         }
         fastLetterRows.removeAll()
         shiftButton = nil
-        emojiScrollView = nil
-        emojiCategoryAnchors.removeAll()
+        emojiCollectionView = nil
         emojiCategoryButtons.removeAll()
         customToneCursorTimer?.invalidate()
         customToneCursorTimer = nil
@@ -382,6 +387,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     }
 
     private func renderLetterKeyboard() {
+        if !capsLocked { syncShiftWithDocumentContext() }
         keyboardStack.addArrangedSubview(makeLetterFastRow("qwertyuiop"))
         keyboardStack.addArrangedSubview(makeLetterFastRow("asdfghjkl", alignsNineKeyRow: true))
         keyboardStack.addArrangedSubview(makeThirdLetterRow())
@@ -408,6 +414,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                 guard let self else { return }
                 self.insertUserText((self.isShifted || self.capsLocked) ? base.uppercased() : base.lowercased())
                 if self.isShifted && !self.capsLocked {
+                    self.lastShiftTapTime = nil
                     self.isShifted = false
                     DispatchQueue.main.async { [weak self] in
                         guard let self else { return }
@@ -442,7 +449,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     }
 
     private func renderEmojiKeyboard() {
-        keyboardStack.addArrangedSubview(makeEmojiScrollView())
+        keyboardStack.addArrangedSubview(makeEmojiCollectionView())
         keyboardStack.addArrangedSubview(makeEmojiTabsRow())
     }
 
@@ -474,8 +481,8 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         }
         commandRow.addArrangedSubview(mode)
 
-        let emoji = makeSystemButton(title: "☺")
-        emoji.widthAnchor.constraint(equalToConstant: isIPad ? 62 : 50).isActive = true
+        let emoji = makeSystemButton(title: nil, imageName: "face.smiling", imagePointSize: 20)
+        emoji.widthAnchor.constraint(equalToConstant: isIPad ? 62 : 47).isActive = true
         addTapAction(to: emoji) { [weak self] in
             guard let self else { return }
             self.keyboardMode = .emoji
@@ -483,14 +490,14 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         }
         commandRow.addArrangedSubview(emoji)
 
-        let space = makeKeyButton(title: "space", showsPreview: false)
+        let space = makeKeyButton(title: "", showsPreview: false)
         addCharacterAction(to: space) { [weak self] in
             self?.insertCharacter(" ")
         }
         commandRow.addArrangedSubview(space)
 
-        let enter = makeSystemButton(title: "return")
-        enter.widthAnchor.constraint(equalToConstant: isIPad ? 100 : 82).isActive = true
+        let enter = makeSystemButton(title: nil, imageName: "return", imagePointSize: 20)
+        enter.widthAnchor.constraint(equalToConstant: 100).isActive = true
         addCharacterAction(to: enter) { [weak self] in
             self?.insertCharacter("\n")
         }
@@ -1004,6 +1011,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private func makeSymbolRow(cornerTitle: String, cornerAction: @escaping () -> Void) -> UIStackView {
         let row = makeRow()
         row.distribution = .fill
+        if !isIPad { row.spacing = 14 }
 
         let corner = makeSystemButton(title: cornerTitle)
         corner.widthAnchor.constraint(equalToConstant: letterSideButtonWidth).isActive = true
@@ -1018,19 +1026,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         addDeleteAction(to: delete)
         row.addArrangedSubview(delete)
 
-        return row
-    }
-
-    private func makeEmojiRow(_ emojis: [String]) -> UIStackView {
-        let row = makeRow()
-        emojis.forEach { emoji in
-            let button = makeFlatEmojiButton(title: emoji)
-            addCharacterAction(to: button) { [weak self] in
-                self?.recordRecentEmoji(emoji)
-                self?.insertCharacter(emoji)
-            }
-            row.addArrangedSubview(button)
-        }
         return row
     }
 
@@ -1060,56 +1055,50 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         emojiCategories[0] = (emojiCategories[0].0, rows)
     }
 
-    private func makeEmojiScrollView() -> UIScrollView {
-        let scrollView = UIScrollView()
-        scrollView.delegate = self
-        scrollView.showsVerticalScrollIndicator = false
-        scrollView.heightAnchor.constraint(equalToConstant: 154).isActive = true
+    private func makeEmojiCollectionView() -> UICollectionView {
+        let layout = UICollectionViewFlowLayout()
+        layout.scrollDirection = .vertical
+        layout.minimumInteritemSpacing = 0
+        layout.minimumLineSpacing = 2
+        layout.sectionInset = UIEdgeInsets(top: 0, left: 4, bottom: 10, right: 4)
+        layout.headerReferenceSize = CGSize(width: 1, height: 22)
 
-        let stack = UIStackView()
-        stack.axis = .vertical
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.addSubview(stack)
-
-        emojiCategories.forEach { title, rows in
-            let page = makeEmojiCategoryPage(title: title, rows: rows)
-            stack.addArrangedSubview(page)
-            emojiCategoryAnchors.append(page)
-        }
-
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 4),
-            stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -4),
-            stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 4),
-            stack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -4),
-            stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -8)
-        ])
-
-        emojiScrollView = scrollView
-        return scrollView
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        collectionView.dataSource = self
+        collectionView.delegate = self
+        collectionView.backgroundColor = .clear
+        collectionView.showsVerticalScrollIndicator = false
+        collectionView.alwaysBounceVertical = true
+        collectionView.heightAnchor.constraint(equalToConstant: 154).isActive = true
+        collectionView.register(
+            EmojiCollectionCell.self,
+            forCellWithReuseIdentifier: EmojiCollectionCell.reuseIdentifier
+        )
+        collectionView.register(
+            EmojiSectionHeader.self,
+            forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
+            withReuseIdentifier: EmojiSectionHeader.reuseIdentifier
+        )
+        emojiCollectionView = collectionView
+        return collectionView
     }
 
-    private func makeEmojiCategoryPage(title: String, rows: [[String]]) -> UIStackView {
-        let page = UIStackView()
-        page.axis = .vertical
-        page.spacing = 7
-
-        let titleLabel = UILabel()
-        titleLabel.text = title
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.textColor = .secondaryLabel
-        titleLabel.heightAnchor.constraint(equalToConstant: 20).isActive = true
-        page.addArrangedSubview(titleLabel)
-
-        rows.forEach { page.addArrangedSubview(makeEmojiRow($0)) }
-
-        return page
+    private func emoji(at indexPath: IndexPath) -> String? {
+        guard emojiCategories.indices.contains(indexPath.section) else { return nil }
+        var remainingIndex = indexPath.item
+        for row in emojiCategories[indexPath.section].1 {
+            if row.indices.contains(remainingIndex) {
+                return row[remainingIndex]
+            }
+            remainingIndex -= row.count
+        }
+        return nil
     }
 
     private func makeThirdLetterRow() -> UIStackView {
         let row = makeRow()
         row.distribution = .fill
+        if !isIPad { row.spacing = 14 }
 
         let shift = makeSystemButton(title: nil, imageName: "shift")
         shift.widthAnchor.constraint(equalToConstant: letterSideButtonWidth).isActive = true
@@ -1117,18 +1106,19 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         addTapAction(to: shift) { [weak self] in
             guard let self else { return }
             let now = Date()
-            if let last = self.lastShiftTapTime, now.timeIntervalSince(last) < 0.35 {
+            if self.capsLocked {
+                self.capsLocked = false
+                self.isShifted = false
+                self.lastShiftTapTime = nil
+            } else if self.isShifted,
+                      let last = self.lastShiftTapTime,
+                      now.timeIntervalSince(last) < 0.35 {
                 self.capsLocked = true
                 self.isShifted = true
                 self.lastShiftTapTime = nil
             } else {
-                if self.capsLocked {
-                    self.capsLocked = false
-                    self.isShifted = false
-                } else {
-                    self.isShifted.toggle()
-                }
-                self.lastShiftTapTime = now
+                self.isShifted.toggle()
+                self.lastShiftTapTime = self.isShifted ? now : nil
             }
             self.refreshLetterCasing()
             self.updateShiftAppearance()
@@ -1183,13 +1173,15 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     }
 
     private func scrollToEmojiCategory(_ index: Int) {
-        guard let scrollView = emojiScrollView, index < emojiCategoryAnchors.count else { return }
+        guard let collectionView = emojiCollectionView,
+              index < emojiCategories.count,
+              !emojiCategories[index].1.isEmpty else { return }
         selectEmojiCategory(index)
-        let anchor = emojiCategoryAnchors[index]
-        let targetFrame = anchor.convert(anchor.bounds, to: scrollView)
-        let maxOffsetY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
-        let offsetY = min(max(0, targetFrame.minY), maxOffsetY)
-        scrollView.setContentOffset(CGPoint(x: 0, y: offsetY), animated: true)
+        collectionView.scrollToItem(
+            at: IndexPath(item: 0, section: index),
+            at: .top,
+            animated: true
+        )
     }
 
     private func selectEmojiCategory(_ selectedIndex: Int) {
@@ -1336,17 +1328,21 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         return button
     }
 
-    private func makeSystemButton(title: String?, imageName: String? = nil) -> UIButton {
+    private func makeSystemButton(
+        title: String?,
+        imageName: String? = nil,
+        imagePointSize: CGFloat = 15
+    ) -> UIButton {
         let button = UIButton(type: .custom)
         if let title {
             button.setTitle(title, for: .normal)
             button.setTitleColor(.label, for: .normal)
-            button.titleLabel?.font = .systemFont(ofSize: 15, weight: .regular)
+            button.titleLabel?.font = .systemFont(ofSize: 17, weight: .regular)
             button.titleLabel?.adjustsFontSizeToFitWidth = true
             button.titleLabel?.minimumScaleFactor = 0.7
         }
         if let imageName {
-            let symCfg = UIImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+            let symCfg = UIImage.SymbolConfiguration(pointSize: imagePointSize, weight: .regular)
             button.setImage(UIImage(systemName: imageName, withConfiguration: symCfg), for: .normal)
             button.tintColor = .label
         }
@@ -1358,15 +1354,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         button.layer.shadowOffset = CGSize(width: 0, height: 1)
         button.layer.shadowRadius = 0.5
         button.heightAnchor.constraint(equalToConstant: buttonHeight).isActive = true
-        addPressFeedback(to: button)
-        return button
-    }
-
-    private func makeFlatEmojiButton(title: String) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setTitle(title, for: .normal)
-        button.titleLabel?.font = .systemFont(ofSize: 28, weight: .regular)
-        button.heightAnchor.constraint(equalToConstant: 36).isActive = true
         addPressFeedback(to: button)
         return button
     }
@@ -1453,16 +1440,10 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
 
     private func autoCapitalizeIfNeeded(after inserted: String) {
         guard !capsLocked else { return }
-        let before = textDocumentProxy.documentContextBeforeInput ?? ""
-        let trimmed = before.trimmingCharacters(in: .init(charactersIn: " \n"))
-        let atStart = trimmed.isEmpty
-            || trimmed.hasSuffix(".") || trimmed.hasSuffix("!") || trimmed.hasSuffix("?")
-        if atStart {
-            if !isShifted { isShifted = true; refreshLetterCasing() }
-        } else if inserted.rangeOfCharacter(from: .letters) != nil, isShifted, !atStart {
-            isShifted = false
-            refreshLetterCasing()
+        if inserted.rangeOfCharacter(from: .letters) != nil {
+            lastShiftTapTime = nil
         }
+        syncShiftWithDocumentContext()
     }
 
     private func deleteUserText() {
@@ -1479,6 +1460,40 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             return
         }
         textDocumentProxy.deleteBackward()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.capsLocked else { return }
+            self.syncShiftWithDocumentContext()
+        }
+    }
+
+    private func syncShiftWithDocumentContext() {
+        guard !capsLocked,
+              let context = textDocumentProxy.documentContextBeforeInput else { return }
+
+        let shouldShift: Bool
+        if context.isEmpty {
+            shouldShift = true
+        } else if context.last == "\n" {
+            shouldShift = true
+        } else if context.last?.isWhitespace == true {
+            let previousText = context.drop(while: { $0.isWhitespace })
+            if previousText.isEmpty {
+                shouldShift = true
+            } else {
+                let trimmed = context.trimmingCharacters(in: .whitespacesAndNewlines)
+                shouldShift = trimmed.last.map { ".!?".contains($0) } ?? true
+            }
+        } else {
+            shouldShift = false
+        }
+
+        guard isShifted != shouldShift else {
+            updateShiftAppearance()
+            return
+        }
+        isShifted = shouldShift
+        refreshLetterCasing()
+        updateShiftAppearance()
     }
 
     // Auto-capitalize for the custom tone description field.
@@ -2051,7 +2066,7 @@ private final class FastKeyRow: UIView {
     private let sideInset: CGFloat
     private let alignsNineKeyRow: Bool
     private let keyBackground: UIColor
-    private let keySpacing: CGFloat = 5
+    private let keySpacing: CGFloat = 6
     private var activeKeyIndex: Int?
 
     init(sideInset: CGFloat = 0, alignsNineKeyRow: Bool = false, background: UIColor) {
@@ -2113,9 +2128,9 @@ private final class FastKeyRow: UIView {
         }
     }
 
-    // Expand 5pt above and below so row coverage fully bridges the 6pt inter-row gap.
+    // Expand into the native-sized inter-row gap so touches between keys remain forgiving.
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        bounds.insetBy(dx: 0, dy: -5).contains(point)
+        bounds.insetBy(dx: 0, dy: -6).contains(point)
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -2194,15 +2209,115 @@ private final class KeyRowView: UIStackView {
     }
 }
 
-extension KeyboardViewController: AVAudioPlayerDelegate, UIScrollViewDelegate {
+private final class EmojiCollectionCell: UICollectionViewCell {
+    static let reuseIdentifier = "EmojiCollectionCell"
+    private let emojiLabel = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        emojiLabel.font = .systemFont(ofSize: 28)
+        emojiLabel.textAlignment = .center
+        emojiLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(emojiLabel)
+        NSLayoutConstraint.activate([
+            emojiLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            emojiLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            emojiLabel.topAnchor.constraint(equalTo: contentView.topAnchor),
+            emojiLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var isHighlighted: Bool {
+        didSet { contentView.alpha = isHighlighted ? 0.45 : 1 }
+    }
+
+    func configure(emoji: String) {
+        emojiLabel.text = emoji
+    }
+}
+
+private final class EmojiSectionHeader: UICollectionReusableView {
+    static let reuseIdentifier = "EmojiSectionHeader"
+    private let titleLabel = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        titleLabel.textColor = .secondaryLabel
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleLabel)
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            titleLabel.topAnchor.constraint(equalTo: topAnchor),
+            titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func configure(title: String) {
+        titleLabel.text = title
+    }
+}
+
+extension KeyboardViewController: AVAudioPlayerDelegate, UICollectionViewDataSource,
+    UICollectionViewDelegate, UICollectionViewDelegateFlowLayout {
+    func numberOfSections(in collectionView: UICollectionView) -> Int {
+        emojiCategories.count
+    }
+
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        emojiCategories[section].1.reduce(0) { $0 + $1.count }
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        cellForItemAt indexPath: IndexPath
+    ) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(
+            withReuseIdentifier: EmojiCollectionCell.reuseIdentifier,
+            for: indexPath
+        ) as! EmojiCollectionCell
+        cell.configure(emoji: emoji(at: indexPath) ?? "")
+        return cell
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        viewForSupplementaryElementOfKind kind: String,
+        at indexPath: IndexPath
+    ) -> UICollectionReusableView {
+        let header = collectionView.dequeueReusableSupplementaryView(
+            ofKind: kind,
+            withReuseIdentifier: EmojiSectionHeader.reuseIdentifier,
+            for: indexPath
+        ) as! EmojiSectionHeader
+        header.configure(title: emojiCategories[indexPath.section].0)
+        return header
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        guard let emoji = emoji(at: indexPath) else { return }
+        recordRecentEmoji(emoji)
+        insertCharacter(emoji)
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        layout collectionViewLayout: UICollectionViewLayout,
+        sizeForItemAt indexPath: IndexPath
+    ) -> CGSize {
+        CGSize(width: floor((collectionView.bounds.width - 8) / 8), height: 38)
+    }
+
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView === emojiScrollView, !emojiCategoryAnchors.isEmpty else { return }
-        let markerY = scrollView.contentOffset.y + 28
-        var selectedIndex = 0
-        for (index, anchor) in emojiCategoryAnchors.enumerated() {
-            guard anchor.convert(anchor.bounds, to: scrollView).minY <= markerY else { break }
-            selectedIndex = index
-        }
+        guard let collectionView = emojiCollectionView,
+              scrollView === collectionView,
+              let selectedIndex = collectionView.indexPathsForVisibleItems
+                .map(\.section).min() else { return }
         selectEmojiCategory(selectedIndex)
     }
 
