@@ -1,7 +1,9 @@
 import UIKit
 import AVFoundation
 
-final class KeyboardViewController: UIInputViewController {
+final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedback {
+    var enableInputClicksWhenVisible: Bool { true }
+
     private enum KeyboardMode {
         case letters
         case numbers
@@ -12,7 +14,6 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private let client = RewriteClient()
-    private let haptic = UIImpactFeedbackGenerator(style: .light)
     private var outputLanguage = KeyboardSettings.rewriteLanguage
     private var languageButton: UIButton?
     private var statusTask: Task<Void, Never>?
@@ -23,6 +24,7 @@ final class KeyboardViewController: UIInputViewController {
     private var shiftButton: UIButton?
     private var emojiScrollView: UIScrollView?
     private var emojiCategoryAnchors: [UIView] = []
+    private var emojiCategoryButtons: [UIButton] = []
     private var isShifted = true
     private var capsLocked = false
     private var lastShiftTapTime: Date?
@@ -65,6 +67,7 @@ final class KeyboardViewController: UIInputViewController {
     private var buttonHeight: CGFloat          { isIPad ? 56  : 44  }
     private var letterFontSize: CGFloat        { isIPad ? 26  : 24  }
     private var sideButtonWidth: CGFloat       { isIPad ? 72  : 58  }
+    private var letterSideButtonWidth: CGFloat { isIPad ? 72  : 53  }
 
     private static func dynamicColor(light: UIColor, dark: UIColor) -> UIColor {
         UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light }
@@ -87,7 +90,7 @@ final class KeyboardViewController: UIInputViewController {
         dark: UIColor(red: 0.18, green: 0.20, blue: 0.26, alpha: 1)
     )
 
-    private let emojiCategories: [(String, [[String]])] = [
+    private var emojiCategories: [(String, [[String]])] = [
         ("FREQUENTLY USED", [
             ["😁", "💕", "❤️", "😊", "✌️", "😎", "👍", "🎉"],
             ["😍", "😭", "😉", "🎵", "😂", "🌞", "🙁", "😔"],
@@ -96,27 +99,54 @@ final class KeyboardViewController: UIInputViewController {
         ("SMILEYS & PEOPLE", [
             ["😀", "🥹", "☺️", "😃", "😅", "😊", "😄", "😂"],
             ["😇", "😆", "🤣", "🙂", "😉", "😍", "😘", "😜"],
-            ["🤔", "😬", "🙄", "😴", "😢", "😡", "👏", "👋"]
+            ["🤔", "🫡", "🫢", "🫣", "🤭", "🤫", "🤪", "🤩"],
+            ["😬", "🙄", "😴", "😢", "😭", "😡", "🤬", "🥶"],
+            ["👋", "🤚", "🖐️", "✋", "🖖", "🫶", "👌", "🤌"],
+            ["👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌"]
         ]),
         ("ANIMALS & NATURE", [
             ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼"],
             ["🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔"],
-            ["🌸", "🌹", "🌞", "🌙", "⭐️", "🔥", "🌈", "🌎"]
+            ["🐧", "🐦", "🦅", "🦆", "🦢", "🧉", "🦉", "🦜"],
+            ["🐝", "🪱", "🐛", "🦋", "🐌", "🐞", "🐜", "🪰"],
+            ["🌸", "🌹", "🌺", "🌻", "🌼", "🌷", "🌱", "🌲"],
+            ["☀️", "🌤️", "⛅", "🌧️", "⛈️", "❄️", "🌈", "🌊"]
         ]),
         ("FOOD & DRINK", [
             ["🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓"],
             ["🍒", "🍑", "🥑", "🍔", "🍟", "🍕", "🌮", "🍣"],
-            ["🍩", "🍪", "🎂", "☕️", "🍺", "🍷", "🥂", "🧃"]
+            ["🥪", "🌭", "🍿", "🥚", "🥘", "🥙", "🥗", "🥫"],
+            ["🍩", "🍪", "🎂", "🍰", "🧁", "🍫", "🍬", "🍭"],
+            ["☕️", "🍵", "🧃", "🥤", "🍺", "🍻", "🍷", "🥂"]
         ]),
         ("ACTIVITY", [
             ["⚽️", "🏀", "🏈", "⚾️", "🎾", "🏐", "🎱", "🏓"],
             ["🏃", "💃", "🕺", "🚴", "🏆", "🎮", "🎲", "🎯"],
+            ["⛳", "🏒", "🏑", "🏏", "🥊", "🥋", "🤺", "⛷️"],
             ["🎵", "🎤", "🎧", "🎬", "🎨", "🎭", "🎸", "🎹"]
         ]),
-        ("TRAVEL & OBJECTS", [
+        ("TRAVEL & PLACES", [
             ["🚗", "🚕", "🚌", "🚎", "🏎️", "🚓", "✈️", "🚀"],
-            ["🏠", "🏢", "🏝️", "⛰️", "⌚️", "📱", "💻", "⌨️"],
-            ["💡", "📌", "📎", "✂️", "🔒", "🔑", "❤️", "✅"]
+            ["🚙", "🚒", "🚑", "🚚", "🏍️", "🚲", "🚂", "🚢"],
+            ["🏠", "🏡", "🏢", "🏥", "🏫", "🏖️", "🏝️", "⛰️"],
+            ["🗽", "🗼", "🏰", "🌋", "🏕️", "🌅", "🌄", "🌃"]
+        ]),
+        ("OBJECTS", [
+            ["⌚️", "📱", "💻", "⌨️", "🖥️", "🖨️", "🖱️", "💽"],
+            ["📷", "📹", "🎥", "📺", "📻", "🎙️", "🎧", "📡"],
+            ["💡", "🔦", "🕯️", "📔", "📕", "📖", "📚", "📰"],
+            ["✏️", "📝", "📌", "📎", "✂️", "🔒", "🔑", "🛠️"]
+        ]),
+        ("SYMBOLS", [
+            ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍"],
+            ["💯", "💢", "💥", "💫", "💦", "💨", "🕳️", "💬"],
+            ["✅", "❌", "❗", "❓", "⚠️", "🚫", "🔞", "♻️"],
+            ["⬆️", "↗️", "➡️", "↘️", "⬇️", "↙️", "⬅️", "↖️"]
+        ]),
+        ("FLAGS", [
+            ["🇺🇸", "🇨🇦", "🇬🇧", "🇫🇷", "🇩🇪", "🇮🇹", "🇪🇸", "🇵🇹"],
+            ["🇮🇷", "🇹🇷", "🇸🇦", "🇮🇳", "🇨🇳", "🇯🇵", "🇰🇷", "🇦🇺"],
+            ["🇧🇷", "🇲🇽", "🇦🇷", "🇿🇦", "🇳🇬", "🇰🇪", "🇪🇬", "🇦🇪"]
         ])
     ]
 
@@ -181,12 +211,12 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        refreshRecentEmojiCategory()
         keyboardHeightConstraint = view.heightAnchor.constraint(equalToConstant: keyboardNormalHeight)
         keyboardHeightConstraint?.priority = .defaultHigh
         keyboardHeightConstraint?.isActive = true
         setupKeyboard()
         warmUpServer()
-        haptic.prepare()
     }
 
     private func warmUpServer() {
@@ -332,6 +362,7 @@ final class KeyboardViewController: UIInputViewController {
         shiftButton = nil
         emojiScrollView = nil
         emojiCategoryAnchors.removeAll()
+        emojiCategoryButtons.removeAll()
         customToneCursorTimer?.invalidate()
         customToneCursorTimer = nil
         currentAIReviewView = nil
@@ -352,13 +383,21 @@ final class KeyboardViewController: UIInputViewController {
 
     private func renderLetterKeyboard() {
         keyboardStack.addArrangedSubview(makeLetterFastRow("qwertyuiop"))
-        keyboardStack.addArrangedSubview(makeLetterFastRow("asdfghjkl", sideInset: 20))
+        keyboardStack.addArrangedSubview(makeLetterFastRow("asdfghjkl", alignsNineKeyRow: true))
         keyboardStack.addArrangedSubview(makeThirdLetterRow())
         keyboardStack.addArrangedSubview(makeCommandRow(modeTitle: "123"))
     }
 
-    private func makeLetterFastRow(_ letters: String, sideInset: CGFloat = 0) -> FastKeyRow {
-        let row = FastKeyRow(sideInset: sideInset, background: letterKeyBackground)
+    private func makeLetterFastRow(
+        _ letters: String,
+        sideInset: CGFloat = 0,
+        alignsNineKeyRow: Bool = false
+    ) -> FastKeyRow {
+        let row = FastKeyRow(
+            sideInset: sideInset,
+            alignsNineKeyRow: alignsNineKeyRow,
+            background: letterKeyBackground
+        )
         row.heightAnchor.constraint(equalToConstant: keyRowHeight).isActive = true
         row.keyPreview = keyPreview
         row.previewContainer = view
@@ -418,7 +457,11 @@ final class KeyboardViewController: UIInputViewController {
             let sym = UIImage.SymbolConfiguration(pointSize: 16, weight: .light)
             globe.setImage(UIImage(systemName: "globe", withConfiguration: sym), for: .normal)
             globe.widthAnchor.constraint(equalToConstant: sideButtonWidth).isActive = true
-            globe.addTarget(self, action: #selector(advanceToNextInputMode), for: .touchUpInside)
+            globe.addTarget(
+                self,
+                action: #selector(handleInputModeList(from:with:)),
+                for: .allTouchEvents
+            )
             commandRow.addArrangedSubview(globe)
         }
 
@@ -467,18 +510,28 @@ final class KeyboardViewController: UIInputViewController {
         guard hasFullAccess else { showStatus("Enable Full Access"); return }
         guard KeyboardSettings.canUseAI else { showStatus("Subscribe in app"); return }
 
-        let selected = textDocumentProxy.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        aiUsingSelection = !selected.isEmpty
-        if aiUsingSelection {
-            aiOriginalText = selected
-            aiContextBefore = ""; aiContextAfter = ""
+        let selected = textDocumentProxy.selectedText ?? ""
+        if !selected.isEmpty {
+            presentAIReview(originalText: selected, rawText: "", usingSelection: true)
         } else {
-            let (raw, trimmed) = captureFullDraft()
-            aiContextBefore = raw   // full raw text; cursor is at end after capture
-            aiContextAfter  = ""
-            aiOriginalText  = trimmed
+            showStatus("Reading text...")
+            captureFullDraft { [weak self] snapshot in
+                self?.presentAIReview(
+                    originalText: snapshot.trimmed,
+                    rawText: snapshot.raw,
+                    usingSelection: false
+                )
+            }
         }
-        guard !aiOriginalText.isEmpty else { showStatus("Type or select text"); return }
+    }
+
+    private func presentAIReview(originalText: String, rawText: String, usingSelection: Bool) {
+        guard !originalText.isEmpty else { showStatus("Type or select text"); return }
+
+        aiUsingSelection = usingSelection
+        aiOriginalText = originalText
+        aiContextBefore = usingSelection ? "" : rawText
+        aiContextAfter = ""
 
         stopSpeaking()
         aiRefinedText = ""
@@ -502,25 +555,9 @@ final class KeyboardViewController: UIInputViewController {
             showStatus("\(remaining) free rewrite\(remaining == 1 ? "" : "s") left")
         }
 
-        // Re-read whatever is in the text box right now — no cursor movement so
-        // there are no proxy side-effects while the AI panel is open.
-        if aiUsingSelection {
-            let fresh = textDocumentProxy.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !fresh.isEmpty {
-                aiOriginalText  = fresh
-                aiContextBefore = ""
-                aiContextAfter  = ""
-            }
-        } else {
-            let before = textDocumentProxy.documentContextBeforeInput ?? ""
-            let after  = textDocumentProxy.documentContextAfterInput ?? ""
-            let fresh  = (before + after).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !fresh.isEmpty {
-                aiOriginalText  = fresh
-                aiContextBefore = before
-                aiContextAfter  = after
-            }
-        }
+        // Keep the target captured when the AI panel was opened. The document-context
+        // properties are intentionally limited by many host apps and may contain only
+        // the sentence or paragraph nearest the cursor, not the complete text field.
         currentAIReviewView?.showOriginalText(aiOriginalText)
 
         aiTranslatedText = nil
@@ -633,28 +670,17 @@ final class KeyboardViewController: UIInputViewController {
             let textToInsert = self.aiRefinedText.isEmpty ? self.aiOriginalText : self.aiRefinedText
             guard !textToInsert.isEmpty else { return }
 
-            // Read context FIRST (synchronous) before issuing any cursor-movement calls.
-            // documentContextBeforeInput can return a truncated/paragraph-only slice, so we
-            // take the max of every known text-length source plus a safety buffer.
-            // Extra deleteBackward calls when cursor is at position 0 are safe no-ops.
-            let freshBefore = self.textDocumentProxy.documentContextBeforeInput ?? ""
-            let freshAfter  = self.textDocumentProxy.documentContextAfterInput ?? ""
-            let deleteCount = max(
-                freshBefore.count + freshAfter.count,
-                self.aiContextBefore.count + self.aiContextAfter.count,
-                self.aiOriginalText.count
-            ) + 100
-
-            // Queue in FIFO order in the host-app run loop:
-            //   1. move past any trailing text → absolute end
-            //   2. delete the whole original text
-            //   3. insert the refined text
-            if !freshAfter.isEmpty {
-                self.textDocumentProxy.adjustTextPosition(byCharacterOffset: freshAfter.count)
+            if self.aiUsingSelection {
+                // insertText replaces only the active selection.
+                self.textDocumentProxy.insertText(textToInsert)
+            } else {
+                // No selection: replace the complete snapshot captured when the panel opened.
+                self.replaceCurrentDraft(
+                    contextBeforeInput: self.aiContextBefore,
+                    contextAfterInput: self.aiContextAfter,
+                    refined: textToInsert
+                )
             }
-            self.textDocumentProxy.adjustTextPosition(byCharacterOffset: 100_000)
-            (0..<deleteCount).forEach { _ in self.textDocumentProxy.deleteBackward() }
-            self.textDocumentProxy.insertText(textToInsert)
 
             self.keyboardMode = .letters
             self.renderKeyboard()
@@ -980,7 +1006,7 @@ final class KeyboardViewController: UIInputViewController {
         row.distribution = .fill
 
         let corner = makeSystemButton(title: cornerTitle)
-        corner.widthAnchor.constraint(equalToConstant: sideButtonWidth).isActive = true
+        corner.widthAnchor.constraint(equalToConstant: letterSideButtonWidth).isActive = true
         addTapAction(to: corner, action: cornerAction)
         row.addArrangedSubview(corner)
 
@@ -988,7 +1014,7 @@ final class KeyboardViewController: UIInputViewController {
         row.addArrangedSubview(keysRow)
 
         let delete = makeSystemButton(title: nil, imageName: "delete.left")
-        delete.widthAnchor.constraint(equalToConstant: sideButtonWidth).isActive = true
+        delete.widthAnchor.constraint(equalToConstant: letterSideButtonWidth).isActive = true
         addDeleteAction(to: delete)
         row.addArrangedSubview(delete)
 
@@ -1000,6 +1026,7 @@ final class KeyboardViewController: UIInputViewController {
         emojis.forEach { emoji in
             let button = makeFlatEmojiButton(title: emoji)
             addCharacterAction(to: button) { [weak self] in
+                self?.recordRecentEmoji(emoji)
                 self?.insertCharacter(emoji)
             }
             row.addArrangedSubview(button)
@@ -1007,8 +1034,35 @@ final class KeyboardViewController: UIInputViewController {
         return row
     }
 
+    private func recordRecentEmoji(_ emoji: String) {
+        let key = "recentEmojis"
+        var recent = KeyboardSettings.sharedDefaults.stringArray(forKey: key) ?? []
+        recent.removeAll { $0 == emoji }
+        recent.insert(emoji, at: 0)
+        KeyboardSettings.sharedDefaults.set(Array(recent.prefix(24)), forKey: key)
+        refreshRecentEmojiCategory()
+    }
+
+    private func refreshRecentEmojiCategory() {
+        guard !emojiCategories.isEmpty else { return }
+        let defaults = emojiCategories[0].1.flatMap { $0 }
+        let stored = KeyboardSettings.sharedDefaults.stringArray(forKey: "recentEmojis") ?? []
+        var items = stored
+        for emoji in defaults where !items.contains(emoji) {
+            items.append(emoji)
+        }
+        items = Array(items.prefix(24))
+
+        var rows: [[String]] = []
+        for start in stride(from: 0, to: items.count, by: 8) {
+            rows.append(Array(items[start..<min(start + 8, items.count)]))
+        }
+        emojiCategories[0] = (emojiCategories[0].0, rows)
+    }
+
     private func makeEmojiScrollView() -> UIScrollView {
         let scrollView = UIScrollView()
+        scrollView.delegate = self
         scrollView.showsVerticalScrollIndicator = false
         scrollView.heightAnchor.constraint(equalToConstant: 154).isActive = true
 
@@ -1058,7 +1112,7 @@ final class KeyboardViewController: UIInputViewController {
         row.distribution = .fill
 
         let shift = makeSystemButton(title: nil, imageName: "shift")
-        shift.widthAnchor.constraint(equalToConstant: sideButtonWidth).isActive = true
+        shift.widthAnchor.constraint(equalToConstant: letterSideButtonWidth).isActive = true
         shiftButton = shift
         addTapAction(to: shift) { [weak self] in
             guard let self else { return }
@@ -1084,7 +1138,7 @@ final class KeyboardViewController: UIInputViewController {
         row.addArrangedSubview(makeLetterFastRow("zxcvbnm"))
 
         let delete = makeSystemButton(title: nil, imageName: "delete.left")
-        delete.widthAnchor.constraint(equalToConstant: sideButtonWidth).isActive = true
+        delete.widthAnchor.constraint(equalToConstant: letterSideButtonWidth).isActive = true
         addDeleteAction(to: delete)
         row.addArrangedSubview(delete)
 
@@ -1106,13 +1160,16 @@ final class KeyboardViewController: UIInputViewController {
         }
         row.addArrangedSubview(abc)
 
-        ["clock", "face.smiling", "leaf", "fork.knife", "soccerball", "car"].enumerated().forEach { index, iconName in
+        ["clock", "face.smiling", "leaf", "fork.knife", "soccerball", "car", "lightbulb", "number", "flag"].enumerated().forEach { index, iconName in
             let button = UIButton(type: .system)
             button.setImage(UIImage(systemName: iconName), for: .normal)
-            button.tintColor = .secondaryLabel
+            button.tintColor = index == 0 ? .label : .secondaryLabel
+            button.layer.cornerRadius = 15
+            button.backgroundColor = index == 0 ? specialKeyBackground : .clear
             addTapAction(to: button) { [weak self] in
                 self?.scrollToEmojiCategory(index)
             }
+            emojiCategoryButtons.append(button)
             row.addArrangedSubview(button)
         }
 
@@ -1127,11 +1184,20 @@ final class KeyboardViewController: UIInputViewController {
 
     private func scrollToEmojiCategory(_ index: Int) {
         guard let scrollView = emojiScrollView, index < emojiCategoryAnchors.count else { return }
+        selectEmojiCategory(index)
         let anchor = emojiCategoryAnchors[index]
         let targetFrame = anchor.convert(anchor.bounds, to: scrollView)
         let maxOffsetY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
         let offsetY = min(max(0, targetFrame.minY), maxOffsetY)
         scrollView.setContentOffset(CGPoint(x: 0, y: offsetY), animated: true)
+    }
+
+    private func selectEmojiCategory(_ selectedIndex: Int) {
+        for (index, button) in emojiCategoryButtons.enumerated() {
+            let selected = index == selectedIndex
+            button.tintColor = selected ? .label : .secondaryLabel
+            button.backgroundColor = selected ? specialKeyBackground : .clear
+        }
     }
 
     private func makeRow() -> UIStackView {
@@ -1255,12 +1321,12 @@ final class KeyboardViewController: UIInputViewController {
         button.titleLabel?.lineBreakMode = .byTruncatingTail
         button.isExclusiveTouch = false
         button.layer.backgroundColor = letterKeyBackground.cgColor
-        button.layer.cornerRadius = 10
+        button.layer.cornerRadius = 6
         button.layer.masksToBounds = false
         button.layer.shadowColor = UIColor.black.cgColor
         button.layer.shadowOpacity = 0.3
         button.layer.shadowOffset = CGSize(width: 0, height: 1)
-        button.layer.shadowRadius = 0
+        button.layer.shadowRadius = 0.5
         button.heightAnchor.constraint(equalToConstant: buttonHeight).isActive = true
         if showsPreview {
             addKeyPreview(to: button)
@@ -1285,12 +1351,12 @@ final class KeyboardViewController: UIInputViewController {
             button.tintColor = .label
         }
         button.layer.backgroundColor = specialKeyBackground.cgColor
-        button.layer.cornerRadius = 10
+        button.layer.cornerRadius = 6
         button.layer.masksToBounds = false
         button.layer.shadowColor = UIColor.black.cgColor
         button.layer.shadowOpacity = 0.3
         button.layer.shadowOffset = CGSize(width: 0, height: 1)
-        button.layer.shadowRadius = 0
+        button.layer.shadowRadius = 0.5
         button.heightAnchor.constraint(equalToConstant: buttonHeight).isActive = true
         addPressFeedback(to: button)
         return button
@@ -1301,21 +1367,24 @@ final class KeyboardViewController: UIInputViewController {
         button.setTitle(title, for: .normal)
         button.titleLabel?.font = .systemFont(ofSize: 28, weight: .regular)
         button.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        addPressFeedback(to: button)
         return button
     }
 
     private func addTapAction(to button: UIButton, action: @escaping () -> Void) {
-        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+        button.addAction(UIAction { _ in
+            UIDevice.current.playInputClick()
+            action()
+        }, for: .touchUpInside)
     }
 
     private func addCharacterAction(to button: UIButton, action: @escaping () -> Void) {
-        button.addAction(UIAction { _ in action() }, for: .touchDown)
+        // Match the system keyboard: highlight/preview on touch-down, commit on release.
+        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
     }
 
     private func addDeleteAction(to button: UIButton) {
         button.addAction(UIAction { [weak self] _ in
-            self?.haptic.impactOccurred()
-            self?.haptic.prepare()
             self?.deleteCharacter()
             self?.startDeleteRepeat()
         }, for: .touchDown)
@@ -1326,11 +1395,17 @@ final class KeyboardViewController: UIInputViewController {
 
     private func startDeleteRepeat() {
         deleteTimer?.invalidate()
-        deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-            self?.deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        let initialTimer = Timer(timeInterval: 0.45, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            let repeatTimer = Timer(timeInterval: 0.085, repeats: true) { [weak self] _ in
                 self?.deleteCharacter()
             }
+            self.deleteTimer = repeatTimer
+            RunLoop.main.add(repeatTimer, forMode: .common)
         }
+        deleteTimer = initialTimer
+        // Common mode keeps repeat active while UIKit is tracking the held touch.
+        RunLoop.main.add(initialTimer, forMode: .common)
     }
 
     private func stopDeleteRepeat() {
@@ -1359,6 +1434,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func insertUserText(_ text: String) {
+        UIDevice.current.playInputClick()
         if keyboardMode == .customToneInput {
             if customToneNaming {
                 customToneNameBuffer += text
@@ -1390,6 +1466,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func deleteUserText() {
+        UIDevice.current.playInputClick()
         if keyboardMode == .customToneInput {
             if customToneNaming {
                 if !customToneNameBuffer.isEmpty { customToneNameBuffer.removeLast() }
@@ -1421,10 +1498,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func addPressFeedback(to button: UIButton) {
-        button.addAction(UIAction { [weak self, weak button] _ in
+        button.addAction(UIAction { [weak button] _ in
             button?.alpha = 0.72
-            self?.haptic.impactOccurred()
-            self?.haptic.prepare()
         }, for: .touchDown)
         button.addAction(UIAction { [weak button] _ in
             button?.alpha = 1
@@ -1596,19 +1671,37 @@ final class KeyboardViewController: UIInputViewController {
             showStatus("\(remaining) free rewrite\(remaining == 1 ? "" : "s") left")
         }
 
-        let selected = textDocumentProxy.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let usingSelection = !selected.isEmpty
-        var contextBeforeInput = ""
-        var contextAfterInput  = ""
-        let text: String
-        if usingSelection {
-            text = selected
+        let selected = textDocumentProxy.selectedText ?? ""
+        if !selected.isEmpty {
+            startRefinement(
+                text: selected,
+                mode: mode,
+                usingSelection: true,
+                contextBeforeInput: "",
+                contextAfterInput: ""
+            )
         } else {
-            let (raw, trimmed) = captureFullDraft()
-            contextBeforeInput = raw   // cursor at end after capture; after = ""
-            text = trimmed
+            showStatus("Reading text...")
+            captureFullDraft { [weak self] snapshot in
+                guard let self else { return }
+                self.startRefinement(
+                    text: snapshot.trimmed,
+                    mode: mode,
+                    usingSelection: false,
+                    contextBeforeInput: snapshot.raw,
+                    contextAfterInput: ""
+                )
+            }
         }
+    }
 
+    private func startRefinement(
+        text: String,
+        mode: RewriteMode,
+        usingSelection: Bool,
+        contextBeforeInput: String,
+        contextAfterInput: String
+    ) {
         guard !text.isEmpty else {
             showStatus("Type or select text")
             return
@@ -1626,7 +1719,7 @@ final class KeyboardViewController: UIInputViewController {
                     } else if usingSelection {
                         // insertText replaces the active selection on iOS
                         self.textDocumentProxy.insertText(refined)
-                                self.showStatus("Inserted")
+                        self.showStatus("Inserted")
                     } else {
                         self.replaceCurrentDraft(
                             contextBeforeInput: contextBeforeInput,
@@ -1661,20 +1754,26 @@ final class KeyboardViewController: UIInputViewController {
             showTranslateStatus("\(remaining) free rewrite\(remaining == 1 ? "" : "s") left")
         }
 
-        let selected = textDocumentProxy.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let source: String
+        let selected = textDocumentProxy.selectedText ?? ""
         if !selected.isEmpty {
-            source = selected
+            startTranslation(source: selected, targetLanguage: KeyboardSettings.translateLanguage)
         } else {
-            let (_, trimmed) = captureFullDraft()
-            guard !trimmed.isEmpty else {
-                showTranslateStatus("Type or select text")
-                return
+            showTranslateStatus("Reading text...")
+            captureFullDraft { [weak self] snapshot in
+                self?.startTranslation(
+                    source: snapshot.trimmed,
+                    targetLanguage: KeyboardSettings.translateLanguage
+                )
             }
-            source = trimmed
+        }
+    }
+
+    private func startTranslation(source: String, targetLanguage: String) {
+        guard !source.isEmpty else {
+            showTranslateStatus("Type or select text")
+            return
         }
 
-        let targetLanguage = KeyboardSettings.translateLanguage
         translateButton?.setTitle(" Translating...", for: .normal)
         translateButton?.setImage(nil, for: .normal)
         bannerDismissTask?.cancel()
@@ -1740,31 +1839,185 @@ final class KeyboardViewController: UIInputViewController {
         return (error as? LocalizedError)?.errorDescription ?? "Could not refine"
     }
 
-    /// Captures the full text in the host app by temporarily moving the cursor to the document
-    /// start, reading documentContextAfterInput (which now spans the whole document), then
-    /// restoring the cursor to the end. This bypasses the silent iOS buffer limit on
-    /// documentContextBeforeInput that silently drops the beginning of long messages.
-    /// Returns (raw, trimmed) — raw preserves exact char count for deletion, trimmed for API.
-    private func captureFullDraft() -> (raw: String, trimmed: String) {
-        let before = textDocumentProxy.documentContextBeforeInput ?? ""
-        let after  = textDocumentProxy.documentContextAfterInput ?? ""
+    private typealias DraftSnapshot = (raw: String, trimmed: String)
 
-        // iOS limits each documentContextAfterInput read to ~100–200 chars.
-        // Read in chunks by moving the cursor forward after each read until
-        // nothing remains. Cap at 500 iterations (~100 KB) for safety.
-        textDocumentProxy.adjustTextPosition(byCharacterOffset: -100_000)
-        var collected = ""
-        for _ in 0..<500 {
-            let chunk = textDocumentProxy.documentContextAfterInput ?? ""
-            guard !chunk.isEmpty else { break }
-            collected += chunk
-            textDocumentProxy.adjustTextPosition(byCharacterOffset: chunk.count)
+    /// Captures the complete host text field. Host apps such as WhatsApp apply proxy cursor
+    /// movements on a later run-loop pass, so every move must settle before context is read.
+    private func captureFullDraft(completion: @escaping (DraftSnapshot) -> Void) {
+        let nearbyText = (textDocumentProxy.documentContextBeforeInput ?? "")
+            + (textDocumentProxy.documentContextAfterInput ?? "")
+
+        // Large offsets are clamped by some hosts at sentence, newline, or emoji
+        // boundaries. Walk backward through each available context window instead.
+        moveToDraftStart(remainingChunks: 500, delay: 0.05) { [weak self] in
+            self?.collectDraftChunks(
+                collected: "",
+                nearbyText: nearbyText,
+                remainingChunks: 500,
+                readRetries: 3,
+                delay: 0.05,
+                completion: completion
+            )
         }
-        // Restore cursor to end so deletion in replaceCurrentDraft works correctly.
-        textDocumentProxy.adjustTextPosition(byCharacterOffset: 100_000)
+    }
 
-        let raw = collected.count > before.count + after.count ? collected : before + after
-        return (raw, raw.trimmingCharacters(in: .whitespacesAndNewlines))
+    private func moveToDraftStart(
+        remainingChunks: Int,
+        delay: TimeInterval,
+        completion: @escaping () -> Void
+    ) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+
+            let chunkBeforeCursor = self.textDocumentProxy.documentContextBeforeInput ?? ""
+            guard remainingChunks > 0 else {
+                completion()
+                return
+            }
+
+            guard !chunkBeforeCursor.isEmpty else {
+                self.probePastDraftBoundary(
+                    remainingChunks: remainingChunks,
+                    completion: completion
+                )
+                return
+            }
+
+            self.textDocumentProxy.adjustTextPosition(
+                byCharacterOffset: -chunkBeforeCursor.count
+            )
+            self.moveToDraftStart(
+                remainingChunks: remainingChunks - 1,
+                delay: 0.05,
+                completion: completion
+            )
+        }
+    }
+
+    /// An empty context can mean either the true start or a privacy/context boundary inserted
+    /// by the host. Probe one character backward; a changed after-context proves we crossed a
+    /// boundary and should keep scanning.
+    private func probePastDraftBoundary(
+        remainingChunks: Int,
+        completion: @escaping () -> Void
+    ) {
+        let afterBeforeProbe = textDocumentProxy.documentContextAfterInput ?? ""
+        textDocumentProxy.adjustTextPosition(byCharacterOffset: -1)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self else { return }
+            let afterProbe = self.textDocumentProxy.documentContextAfterInput ?? ""
+            guard afterProbe != afterBeforeProbe else {
+                completion()
+                return
+            }
+
+            self.moveToDraftStart(
+                remainingChunks: remainingChunks - 1,
+                delay: 0.05,
+                completion: completion
+            )
+        }
+    }
+
+    private func collectDraftChunks(
+        collected: String,
+        nearbyText: String,
+        remainingChunks: Int,
+        readRetries: Int,
+        delay: TimeInterval,
+        completion: @escaping (DraftSnapshot) -> Void
+    ) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+
+            let chunk = self.textDocumentProxy.documentContextAfterInput ?? ""
+            if !chunk.isEmpty && remainingChunks > 0 {
+                let updated = collected + chunk
+                self.textDocumentProxy.adjustTextPosition(byCharacterOffset: chunk.count)
+                self.collectDraftChunks(
+                    collected: updated,
+                    nearbyText: nearbyText,
+                    remainingChunks: remainingChunks - 1,
+                    readRetries: readRetries,
+                    delay: 0.05,
+                    completion: completion
+                )
+                return
+            }
+
+            // A host may briefly return no context while applying the previous move.
+            if collected.isEmpty && !nearbyText.isEmpty && readRetries > 0 {
+                self.collectDraftChunks(
+                    collected: "",
+                    nearbyText: nearbyText,
+                    remainingChunks: remainingChunks,
+                    readRetries: readRetries - 1,
+                    delay: 0.08,
+                    completion: completion
+                )
+                return
+            }
+
+            guard remainingChunks > 0 else {
+                self.finishDraftCapture(
+                    collected: collected,
+                    nearbyText: nearbyText,
+                    completion: completion
+                )
+                return
+            }
+
+            self.probeForwardDraftBoundary(
+                collected: collected,
+                nearbyText: nearbyText,
+                remainingChunks: remainingChunks,
+                completion: completion
+            )
+        }
+    }
+
+    private func probeForwardDraftBoundary(
+        collected: String,
+        nearbyText: String,
+        remainingChunks: Int,
+        completion: @escaping (DraftSnapshot) -> Void
+    ) {
+        let beforeProbe = textDocumentProxy.documentContextBeforeInput ?? ""
+        textDocumentProxy.adjustTextPosition(byCharacterOffset: 1)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self else { return }
+            let afterProbe = self.textDocumentProxy.documentContextBeforeInput ?? ""
+
+            guard afterProbe != beforeProbe, let crossedCharacter = afterProbe.last else {
+                self.finishDraftCapture(
+                    collected: collected,
+                    nearbyText: nearbyText,
+                    completion: completion
+                )
+                return
+            }
+
+            self.collectDraftChunks(
+                collected: collected + String(crossedCharacter),
+                nearbyText: nearbyText,
+                remainingChunks: remainingChunks - 1,
+                readRetries: 0,
+                delay: 0.05,
+                completion: completion
+            )
+        }
+    }
+
+    private func finishDraftCapture(
+        collected: String,
+        nearbyText: String,
+        completion: (DraftSnapshot) -> Void
+    ) {
+        let raw = collected.count >= nearbyText.count ? collected : nearbyText
+        // Forward scanning naturally leaves the cursor at the true end.
+        completion((raw, raw.trimmingCharacters(in: .whitespacesAndNewlines)))
     }
 
     private func replaceCurrentDraft(contextBeforeInput: String, contextAfterInput: String, refined: String) {
@@ -1781,9 +2034,8 @@ final class KeyboardViewController: UIInputViewController {
 }
 
 
-// Custom key row that renders keys as UILabels and routes all touches directly in touchesBegan,
-// skipping UIButton's internal state machine entirely. This eliminates per-key UIButton overhead
-// and fires haptic + character insertion at the very start of the touch event.
+// Custom key row with native-style tracking: preview on touch-down, slide between keys,
+// and commit the final key only when the finger lifts.
 private final class FastKeyRow: UIView {
     struct Key {
         var frame: CGRect = .zero
@@ -1797,23 +2049,20 @@ private final class FastKeyRow: UIView {
     weak var previewContainer: UIView?
 
     private let sideInset: CGFloat
+    private let alignsNineKeyRow: Bool
     private let keyBackground: UIColor
     private let keySpacing: CGFloat = 5
-    private let haptic = UIImpactFeedbackGenerator(style: .light)
+    private var activeKeyIndex: Int?
 
-    init(sideInset: CGFloat = 0, background: UIColor) {
+    init(sideInset: CGFloat = 0, alignsNineKeyRow: Bool = false, background: UIColor) {
         self.sideInset = sideInset
+        self.alignsNineKeyRow = alignsNineKeyRow
         self.keyBackground = background
         super.init(frame: .zero)
         isMultipleTouchEnabled = false
     }
 
     required init?(coder: NSCoder) { fatalError() }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        if window != nil { haptic.prepare() }
-    }
 
     func addKey(
         base: String,
@@ -1827,12 +2076,12 @@ private final class FastKeyRow: UIView {
         label.font = font
         label.textColor = .label
         label.layer.backgroundColor = keyBackground.cgColor
-        label.layer.cornerRadius = 10
+        label.layer.cornerRadius = 6
         label.layer.masksToBounds = false
         label.layer.shadowColor = UIColor.black.cgColor
         label.layer.shadowOpacity = 0.3
         label.layer.shadowOffset = CGSize(width: 0, height: 1)
-        label.layer.shadowRadius = 0
+        label.layer.shadowRadius = 0.5
         label.isUserInteractionEnabled = false
         addSubview(label)
         keys.append(Key(label: label, baseChar: base, action: action))
@@ -1849,10 +2098,15 @@ private final class FastKeyRow: UIView {
         super.layoutSubviews()
         guard !keys.isEmpty else { return }
         let n = CGFloat(keys.count)
-        let available = bounds.width - sideInset * 2
+        // The native nine-key home row uses half of the missing tenth key on each side.
+        // Expressing that inset as a width ratio keeps A–L aligned on every iPhone size.
+        let resolvedSideInset = alignsNineKeyRow
+            ? bounds.width * 0.05 + keySpacing * 0.05
+            : sideInset
+        let available = bounds.width - resolvedSideInset * 2
         let keyW = (available - keySpacing * (n - 1)) / n
         for i in keys.indices {
-            let x = sideInset + CGFloat(i) * (keyW + keySpacing)
+            let x = resolvedSideInset + CGFloat(i) * (keyW + keySpacing)
             let f = CGRect(x: x, y: 0, width: keyW, height: bounds.height)
             keys[i].frame = f
             keys[i].label.frame = f
@@ -1866,20 +2120,63 @@ private final class FastKeyRow: UIView {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let pt = touches.first?.location(in: self), !keys.isEmpty else { return }
-        let key = nearest(to: pt)
-        haptic.impactOccurred()
-        haptic.prepare()
-        if let preview = keyPreview, let container = previewContainer {
-            preview.show(character: key.label.text ?? "", above: convert(key.frame, to: container), in: container)
-        }
-        key.action()
+        let index = nearestIndex(to: pt)
+        setActiveKey(index)
     }
 
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { keyPreview?.hide() }
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { keyPreview?.hide() }
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let pt = touches.first?.location(in: self) else { return }
+        let trackingBounds = bounds.insetBy(dx: -12, dy: -18)
+        guard trackingBounds.contains(pt) else {
+            setActiveKey(nil)
+            return
+        }
 
-    private func nearest(to pt: CGPoint) -> Key {
-        keys.min { abs($0.frame.midX - pt.x) < abs($1.frame.midX - pt.x) } ?? keys[0]
+        let index = nearestIndex(to: pt)
+        if index != activeKeyIndex { setActiveKey(index) }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let pt = touches.first?.location(in: self),
+              bounds.insetBy(dx: -12, dy: -18).contains(pt),
+              let index = activeKeyIndex else {
+            setActiveKey(nil)
+            return
+        }
+
+        let action = keys[index].action
+        setActiveKey(nil)
+        action()
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        setActiveKey(nil)
+    }
+
+    private func setActiveKey(_ index: Int?) {
+        if let activeKeyIndex { keys[activeKeyIndex].label.alpha = 1 }
+        activeKeyIndex = index
+
+        guard let index else {
+            keyPreview?.hide()
+            return
+        }
+
+        let key = keys[index]
+        key.label.alpha = 0.72
+        if let preview = keyPreview, let container = previewContainer {
+            preview.show(
+                character: key.label.text ?? "",
+                above: convert(key.frame, to: container),
+                in: container
+            )
+        }
+    }
+
+    private func nearestIndex(to pt: CGPoint) -> Int {
+        keys.indices.min {
+            abs(keys[$0].frame.midX - pt.x) < abs(keys[$1].frame.midX - pt.x)
+        } ?? 0
     }
 }
 
@@ -1897,7 +2194,18 @@ private final class KeyRowView: UIStackView {
     }
 }
 
-extension KeyboardViewController: AVAudioPlayerDelegate {
+extension KeyboardViewController: AVAudioPlayerDelegate, UIScrollViewDelegate {
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === emojiScrollView, !emojiCategoryAnchors.isEmpty else { return }
+        let markerY = scrollView.contentOffset.y + 28
+        var selectedIndex = 0
+        for (index, anchor) in emojiCategoryAnchors.enumerated() {
+            guard anchor.convert(anchor.bounds, to: scrollView).minY <= markerY else { break }
+            selectedIndex = index
+        }
+        selectEmojiCategory(selectedIndex)
+    }
+
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         currentSpeechTarget = nil
         audioPlayer = nil

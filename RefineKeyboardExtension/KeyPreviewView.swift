@@ -42,12 +42,15 @@ final class KeyPreviewView: UIView {
     func show(character: String, above keyFrame: CGRect, in containerView: UIView) {
         label.text = character
 
-        let width = max(keyFrame.width, 40)
-        let height = width * 1.6
-        let x = keyFrame.midX - width / 2
-        let y = keyFrame.minY - height + 6
+        // Cover the pressed key and extend upward like the native iOS callout.
+        let width = max(keyFrame.width + 8, 44)
+        let height = keyFrame.height + 38
+        let unclampedX = keyFrame.midX - width / 2
+        let x = min(max(unclampedX, 4), max(4, containerView.bounds.width - width - 4))
+        let y = keyFrame.minY - 38
 
         frame = CGRect(x: x, y: y, width: width, height: height)
+        containerView.bringSubviewToFront(self)
         isHidden = false
     }
 
