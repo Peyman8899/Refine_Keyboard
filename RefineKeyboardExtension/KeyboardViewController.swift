@@ -2378,25 +2378,29 @@ final class AIReviewView: UIView {
 
         // ── Tone rows: row1 = Grammar | Refine | Warm | Pro ─────────
         //              row2 = Short | Flirty | Street | Funny
-        let row1Tones: [(RewriteMode, String)] = [
-            (.grammar, "✅ Grammar"), (.polish, "✨ Refine"),
-            (.warm, "💛 Warm"),       (.professional, "💼 Pro")
+        let row1Tones: [(RewriteMode, String, String)] = [
+            (.grammar, "grammar", "Grammar"), (.polish, "refine", "Refine"),
+            (.warm, "warm", "Warm"),           (.professional, "professional", "Pro")
         ]
-        let row2Tones: [(RewriteMode, String)] = [
-            (.shorter, "✂️ Short"), (.flirty, "😍 Flirty"),
-            (.street, "🔥 Vibe"),   (.funny, "😂 Funny")
+        let row2Tones: [(RewriteMode, String, String)] = [
+            (.shorter, "shorter", "Short"), (.flirty, "flirty", "Flirty"),
+            (.street, "street", "Vibe"),    (.funny, "funny", "Funny")
         ]
 
-        func makeToneRow(_ items: [(RewriteMode, String)]) -> UIStackView {
+        func makeToneRow(_ items: [(RewriteMode, String, String)]) -> UIStackView {
             let row = UIStackView()
             row.axis = .horizontal
             row.spacing = 5
             row.distribution = .fillEqually
             row.translatesAutoresizingMaskIntoConstraints = false
-            for (mode, title) in items {
+            for (mode, emojiAsset, label) in items {
                 let btn = UIButton(type: .custom)
-                btn.setTitle(title, for: .normal)
-                btn.titleLabel?.font = .systemFont(ofSize: 11, weight: .medium)
+                btn.setImage(Self.toneEmojiImage(named: emojiAsset), for: .normal)
+                btn.setTitle(" \(label)", for: .normal)
+                btn.titleLabel?.font = .systemFont(
+                    ofSize: UIDevice.current.userInterfaceIdiom == .pad ? 12 : 11,
+                    weight: .medium
+                )
                 btn.titleLabel?.adjustsFontSizeToFitWidth = true
                 btn.titleLabel?.minimumScaleFactor = 0.75
                 btn.layer.cornerRadius = 7
@@ -2723,6 +2727,20 @@ final class AIReviewView: UIView {
     }
 
     // MARK: - Private helpers
+
+    private static func toneEmojiImage(named name: String) -> UIImage? {
+        guard let url = Bundle(for: AIReviewView.self).url(
+            forResource: name,
+            withExtension: "png",
+            subdirectory: "ToneEmojiAssets"
+        ), let source = UIImage(contentsOfFile: url.path) else { return nil }
+
+        let side: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 16 : 14
+        let size = CGSize(width: side, height: side)
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            source.draw(in: CGRect(origin: .zero, size: size))
+        }.withRenderingMode(.alwaysOriginal)
+    }
 
     private func setActionsEnabled(_ on: Bool) {
         insertBtn.isEnabled = on

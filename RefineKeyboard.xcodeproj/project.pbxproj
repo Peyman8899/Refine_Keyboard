@@ -22,6 +22,7 @@
 		FA00000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F310305F3004568200DACF62 /* PrivacyInfo.xcprivacy */; };
 		FA00000000000002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FA00000000000010 /* PrivacyInfo.xcprivacy */; };
 		FA00000000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FA00000000000011 /* Assets.xcassets */; };
+		FA00000000000004 /* ToneEmojiAssets in Resources */ = {isa = PBXBuildFile; fileRef = FA00000000000012 /* ToneEmojiAssets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -70,6 +71,7 @@
 		F310305F3004568200DACF62 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		FA00000000000010 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		FA00000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		FA00000000000012 /* ToneEmojiAssets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ToneEmojiAssets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -121,6 +123,7 @@
 		110000000000000000000812 /* RefineKeyboardExtension */ = {
 			isa = PBXGroup;
 			children = (
+				FA00000000000012 /* ToneEmojiAssets */,
 				FA00000000000010 /* PrivacyInfo.xcprivacy */,
 				110000000000000000000201 /* KeyboardViewController.swift */,
 				110000000000000000000206 /* KeyPreviewView.swift */,
@@ -231,6 +234,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FA00000000000004 /* ToneEmojiAssets in Resources */,
 				FA00000000000002 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
