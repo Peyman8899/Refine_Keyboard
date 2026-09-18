@@ -159,11 +159,18 @@ struct PaywallView: View {
     }
 
     private var legalText: some View {
-        Text("Subscription renews automatically. Cancel anytime in your Apple ID settings. By subscribing you agree to our Terms of Service and Privacy Policy.")
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 24)
+        VStack(spacing: 8) {
+            Text("Subscription renews automatically. Cancel anytime in your Apple ID settings.")
+                .multilineTextAlignment(.center)
+
+            HStack(spacing: 18) {
+                Link("Terms of Use", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
+                Link("Privacy Policy", destination: URL(string: "https://peyman8899.github.io/Refine_Keyboard/privacy.html")!)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 24)
     }
 
     // MARK: - Helpers

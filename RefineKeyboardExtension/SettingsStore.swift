@@ -8,13 +8,16 @@ struct SavedTone: Codable {
 enum KeyboardSettings {
     static let appGroupID            = "group.com.peyman.RefineKeyboard"
     static let endpointKey           = "rewriteEndpoint"
+    static let appSecretKey          = "stagingAppSecret"
     static let languageKey           = "rewriteLanguage"
     static let subscriptionActiveKey = "subscriptionActive"
     static let freeUsageCountKey     = "freeAIUsageCount"
     static let freeUsageLimit        = 5
     static let productionEndpoint    = "https://refinekeyboard-api.onrender.com/refine"
-    static let speakEndpoint         = "https://refinekeyboard-api.onrender.com/speak"
-    static let appSecret             = "rkp_f863dcf9d283f019826616eb9461bb20c258faf0"
+    static let stagingEndpoint       = "https://refinekeyboard-api-staging.onrender.com/refine"
+    static let productionSpeakEndpoint = "https://refinekeyboard-api.onrender.com/speak"
+    static let stagingSpeakEndpoint  = "https://refinekeyboard-api-staging.onrender.com/speak"
+    static let productionAppSecret   = "rkp_f863dcf9d283f019826616eb9461bb20c258faf0"
     static let translateLanguageKey  = "translateLanguage"
 
     static var translateLanguage: String {
@@ -26,8 +29,33 @@ enum KeyboardSettings {
     }
 
     static var rewriteEndpoint: String {
+#if DEBUG
         let override = sharedDefaults.string(forKey: endpointKey) ?? ""
-        return override.isEmpty ? productionEndpoint : override
+        return override.isEmpty ? stagingEndpoint : override
+#else
+        productionEndpoint
+#endif
+    }
+
+    static var speakEndpoint: String {
+#if DEBUG
+        let rewriteURL = rewriteEndpoint
+        if rewriteURL.hasSuffix("/refine") {
+            return String(rewriteURL.dropLast("/refine".count)) + "/speak"
+        }
+        return stagingSpeakEndpoint
+#else
+        productionSpeakEndpoint
+#endif
+    }
+
+    static var appSecret: String {
+#if DEBUG
+        let stagingSecret = sharedDefaults.string(forKey: appSecretKey) ?? ""
+        return stagingSecret
+#else
+        productionAppSecret
+#endif
     }
 
     static var rewriteLanguage: String {

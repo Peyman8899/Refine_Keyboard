@@ -13,7 +13,17 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         case customToneInput
     }
 
+    private enum CustomToneKeyboardPage {
+        case letters
+        case numbers
+        case symbols
+        case emoji
+    }
+
     private let client = RewriteClient()
+    private var warmupTask: URLSessionDataTask?
+    private var textOperationTask: Task<Void, Never>?
+    private var textOperationGeneration = 0
     private var outputLanguage = KeyboardSettings.rewriteLanguage
     private var languageButton: UIButton?
     private var statusTask: Task<Void, Never>?
@@ -27,11 +37,13 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private var isShifted = true
     private var capsLocked = false
     private var lastShiftTapTime: Date?
+    private var shiftSyncGeneration = 0
     private var keyboardMode: KeyboardMode = .letters
     private let keyPreview = KeyPreviewView()
     private let translationBanner = TranslationBannerView()
     private var bannerDismissTask: Task<Void, Never>?
     private var lastTranslation: String?
+    private weak var aiButton: UIButton?
     private var currentTone: RewriteMode = .polish
     private var toneButton: UIButton?
     private var aiOriginalText = ""
@@ -44,18 +56,25 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     // Custom tone input state
     private var customToneBuffer = ""
     private var customToneNameBuffer = ""
+    private var customToneCursorOffset = 0
+    private var customToneNameCursorOffset = 0
     private var customToneNaming = false
-    private weak var customToneDisplayLabel: UILabel?
-    private weak var customToneNameLabel: UILabel?
+    private var customToneKeyboardPage: CustomToneKeyboardPage = .letters
+    private weak var customToneDisplayField: CustomToneTextFieldView?
+    private weak var customToneNameField: CustomToneTextFieldView?
     private var customToneCursorTimer: Timer?
     private enum SpeechTarget { case english, target }
     private var currentSpeechTarget: SpeechTarget? = nil
     private var audioPlayer: AVAudioPlayer?
     private var speakTask: Task<Void, Never>?
+    private var speechTranslationTask: Task<Void, Never>?
     private weak var currentAIReviewView: AIReviewView?
     private var translateLangButton: UIButton?
     private var translateButton: UIButton?
     private var keyboardRootView: UIStackView?
+    private var isTextOperationInProgress = false
+    private var fullTextCaptureGeneration = 0
+    private var isCapturingFullText = false
 
     private var isIPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
     private var keyboardNormalHeight: CGFloat  { isIPad ? 330 : 268 }
@@ -218,16 +237,44 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         warmUpServer()
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if keyboardMode == .customToneInput, customToneCursorTimer == nil {
+            startCustomToneCursorBlinking()
+        }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        cancelTransientWork()
+    }
+
+    deinit {
+        warmupTask?.cancel()
+        textOperationTask?.cancel()
+        statusTask?.cancel()
+        bannerDismissTask?.cancel()
+        speakTask?.cancel()
+        speechTranslationTask?.cancel()
+        deleteTimer?.invalidate()
+        customToneCursorTimer?.invalidate()
+    }
+
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
         guard keyboardMode == .letters, !capsLocked else { return }
         lastShiftTapTime = nil
-        syncShiftWithDocumentContext()
+        scheduleShiftReconciliation()
     }
 
     private func warmUpServer() {
         guard let url = URL(string: "https://refinekeyboard-api.onrender.com/health") else { return }
-        URLSession.shared.dataTask(with: url).resume()
+        warmupTask?.cancel()
+        let task = URLSession.shared.dataTask(with: url) { [weak self] _, _, _ in
+            self?.warmupTask = nil
+        }
+        warmupTask = task
+        task.resume()
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -285,6 +332,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             aiBtn.bottomAnchor.constraint(equalTo: aiBox.bottomAnchor),
         ])
         aiBtn.addAction(UIAction { [weak self] _ in self?.triggerAIReview() }, for: .touchUpInside)
+        aiButton = aiBtn
 
         let (box1, langBtn1, toneBtn1) = makeBox(
             langIcon: "globe",
@@ -368,11 +416,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         shiftButton = nil
         emojiCollectionView = nil
         emojiCategoryButtons.removeAll()
+        currentAIReviewView = nil
+        customToneDisplayField = nil
+        customToneNameField = nil
         customToneCursorTimer?.invalidate()
         customToneCursorTimer = nil
-        currentAIReviewView = nil
-        customToneDisplayLabel = nil
-        customToneNameLabel = nil
         keyboardHeightConstraint?.constant = keyboardMode == .aiReview ? keyboardAIHeight
                                            : keyboardMode == .customToneInput ? keyboardToneHeight : keyboardNormalHeight
 
@@ -413,15 +461,6 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             row.addKey(base: base, display: display, font: .systemFont(ofSize: letterFontSize, weight: .regular)) { [weak self] in
                 guard let self else { return }
                 self.insertUserText((self.isShifted || self.capsLocked) ? base.uppercased() : base.lowercased())
-                if self.isShifted && !self.capsLocked {
-                    self.lastShiftTapTime = nil
-                    self.isShifted = false
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self else { return }
-                        self.fastLetterRows.forEach { $0.refreshCasing(toUpper: false) }
-                        self.updateShiftAppearance()
-                    }
-                }
             }
         }
         fastLetterRows.append(row)
@@ -476,7 +515,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         mode.widthAnchor.constraint(equalToConstant: sideButtonWidth).isActive = true
         addTapAction(to: mode) { [weak self] in
             guard let self else { return }
-            self.keyboardMode = modeTitle == "ABC" ? .letters : .numbers
+            if self.keyboardMode == .customToneInput {
+                self.customToneKeyboardPage = modeTitle == "ABC" ? .letters : .numbers
+            } else {
+                self.keyboardMode = modeTitle == "ABC" ? .letters : .numbers
+            }
             self.renderKeyboard()
         }
         commandRow.addArrangedSubview(mode)
@@ -485,7 +528,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         emoji.widthAnchor.constraint(equalToConstant: isIPad ? 62 : 47).isActive = true
         addTapAction(to: emoji) { [weak self] in
             guard let self else { return }
-            self.keyboardMode = .emoji
+            if self.keyboardMode == .customToneInput {
+                self.customToneKeyboardPage = .emoji
+            } else {
+                self.keyboardMode = .emoji
+            }
             self.renderKeyboard()
         }
         commandRow.addArrangedSubview(emoji)
@@ -516,18 +563,22 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
 
         guard hasFullAccess else { showStatus("Enable Full Access"); return }
         guard KeyboardSettings.canUseAI else { showStatus("Subscribe in app"); return }
+        guard beginTextOperation() else { return }
 
         let selected = textDocumentProxy.selectedText ?? ""
         if !selected.isEmpty {
             presentAIReview(originalText: selected, rawText: "", usingSelection: true)
+            finishTextOperation()
         } else {
             showStatus("Reading text...")
             captureFullDraft { [weak self] snapshot in
-                self?.presentAIReview(
+                guard let self else { return }
+                self.presentAIReview(
                     originalText: snapshot.trimmed,
                     rawText: snapshot.raw,
                     usingSelection: false
                 )
+                self.finishTextOperation()
             }
         }
     }
@@ -554,6 +605,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             currentAIReviewView?.showError("Subscribe in app to continue")
             return
         }
+        guard beginTextOperation() else { return }
         KeyboardSettings.consumeFreeUse()
         let remaining = KeyboardSettings.freeUsesRemaining
         if !KeyboardSettings.isSubscriptionActive && remaining == 0 {
@@ -569,23 +621,106 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
 
         aiTranslatedText = nil
         currentAIReviewView?.setLoading(true)
-        Task { [weak self] in
+        let requestGeneration = prepareTextOperationTask()
+        textOperationTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let refined = try await client.rewrite(
                     text: aiOriginalText, mode: tone,
                     language: outputLanguage, customInstruction: customInstruction)
                 await MainActor.run {
+                    guard self.isCurrentTextOperationTask(requestGeneration), !Task.isCancelled else { return }
                     self.aiRefinedText = refined
                     self.currentAIReviewView?.setContent(original: self.aiOriginalText, refined: refined)
+                    self.completeTextOperationTask(requestGeneration)
                 }
             } catch {
-                await MainActor.run { self.currentAIReviewView?.showError(self.message(for: error)) }
+                await MainActor.run {
+                    guard self.isCurrentTextOperationTask(requestGeneration) else { return }
+                    if !Task.isCancelled {
+                        self.currentAIReviewView?.showError(self.message(for: error))
+                    }
+                    self.completeTextOperationTask(requestGeneration)
+                }
             }
         }
     }
 
+    private func beginTextOperation() -> Bool {
+        guard !isTextOperationInProgress else { return false }
+        isTextOperationInProgress = true
+        updateTextOperationControls()
+        return true
+    }
+
+    private func finishTextOperation() {
+        isTextOperationInProgress = false
+        updateTextOperationControls()
+    }
+
+    private func prepareTextOperationTask() -> Int {
+        textOperationTask?.cancel()
+        textOperationGeneration &+= 1
+        return textOperationGeneration
+    }
+
+    private func isCurrentTextOperationTask(_ generation: Int) -> Bool {
+        generation == textOperationGeneration
+    }
+
+    private func completeTextOperationTask(_ generation: Int) {
+        guard isCurrentTextOperationTask(generation) else { return }
+        textOperationTask = nil
+        finishTextOperation()
+    }
+
+    private func updateTextOperationControls() {
+        let enabled = !isTextOperationInProgress
+        [aiButton, toneButton, translateButton].forEach {
+            $0?.isEnabled = enabled
+            $0?.alpha = enabled ? 1 : 0.45
+        }
+    }
+
+    private func cancelTransientWork() {
+        warmupTask?.cancel()
+        warmupTask = nil
+
+        fullTextCaptureGeneration &+= 1
+        isCapturingFullText = false
+
+        textOperationGeneration &+= 1
+        textOperationTask?.cancel()
+        textOperationTask = nil
+
+        statusTask?.cancel()
+        statusTask = nil
+        bannerDismissTask?.cancel()
+        bannerDismissTask = nil
+        shiftSyncGeneration &+= 1
+
+        deleteTimer?.invalidate()
+        deleteTimer = nil
+        customToneCursorTimer?.invalidate()
+        customToneCursorTimer = nil
+
+        stopSpeaking()
+        currentAIReviewView?.setTargetLoading(false)
+        currentAIReviewView?.setPlayingEN(false)
+        currentAIReviewView?.setPlayingTarget(false)
+        if keyboardMode == .aiReview, aiRefinedText.isEmpty, !aiOriginalText.isEmpty {
+            currentAIReviewView?.showOriginalText(aiOriginalText)
+        }
+
+        keyPreview.hide()
+        translationBanner.hide(animated: false)
+        finishTextOperation()
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
     private func stopSpeaking() {
+        speechTranslationTask?.cancel()
+        speechTranslationTask = nil
         speakTask?.cancel()
         speakTask = nil
         audioPlayer?.stop()
@@ -649,6 +784,12 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         reviewView.reloadSavedTones()
         reviewView.onCustomToneOpen = { [weak self] in
             guard let self else { return }
+            self.customToneBuffer = ""
+            self.customToneNameBuffer = ""
+            self.customToneCursorOffset = 0
+            self.customToneNameCursorOffset = 0
+            self.customToneNaming = true
+            self.customToneKeyboardPage = .letters
             self.keyboardMode = .customToneInput
             self.renderKeyboard()
         }
@@ -732,21 +873,26 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                 speak(cached)
             } else {
                 self.currentAIReviewView?.setTargetLoading(true)
-                Task { [weak self] in
+                self.speechTranslationTask = Task { [weak self] in
                     guard let self else { return }
                     do {
                         let translated = try await self.client.rewrite(
                             text: textToSpeak, mode: .translate, language: targetLang,
                             customInstruction: "")
                         await MainActor.run {
+                            guard !Task.isCancelled else { return }
+                            self.speechTranslationTask = nil
                             self.aiTranslatedText = translated
                             self.currentAIReviewView?.setTargetLoading(false)
                             speak(translated)
                         }
                     } catch {
                         await MainActor.run {
+                            self.speechTranslationTask = nil
                             self.currentAIReviewView?.setTargetLoading(false)
-                            self.currentAIReviewView?.showError("Translation failed — try again")
+                            if !Task.isCancelled {
+                                self.currentAIReviewView?.showError("Translation failed — try again")
+                            }
                         }
                     }
                 }
@@ -763,8 +909,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     }
 
     private func renderCustomToneKeyboard() {
-        customToneNaming = false
-        customToneNameBuffer = ""
+        updateCustomToneShift()
 
         let pillBg = UIColor { t in t.userInterfaceStyle == .dark
             ? UIColor(white: 0.22, alpha: 1) : UIColor.white }
@@ -785,116 +930,97 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         cancelBtn.addAction(UIAction { [weak self] _ in
             self?.customToneBuffer = ""
             self?.customToneNameBuffer = ""
+            self?.customToneCursorOffset = 0
+            self?.customToneNameCursorOffset = 0
             self?.keyboardMode = .aiReview
             self?.renderKeyboard()
         }, for: .touchUpInside)
 
-        // ── Row 1: "TONE" label + description pill ────────────────────
-        let toneTag = makeFieldTag("TONE", active: true)
+        // ── Row 2: tone description ──────────────────────────────────
+        let toneTag = makeFieldTag("TONE", active: !customToneNaming)
 
-        let descPill = UIView()
+        let descPill = CustomToneTextFieldView()
         descPill.backgroundColor = pillBg
         descPill.layer.cornerRadius = 9
         descPill.layer.borderWidth = 1.5
-        descPill.layer.borderColor = UIColor.systemBlue.cgColor   // active by default
+        descPill.layer.borderColor = customToneNaming ? UIColor.clear.cgColor : UIColor.systemBlue.cgColor
 
-        let toneTextLabel = UILabel()
-        toneTextLabel.text = customToneBuffer.isEmpty ? "describe your tone or style…" : customToneBuffer
-        toneTextLabel.textColor = customToneBuffer.isEmpty ? .placeholderText : .label
-        toneTextLabel.font = .systemFont(ofSize: 13)
-        toneTextLabel.adjustsFontSizeToFitWidth = true
-        toneTextLabel.minimumScaleFactor = 0.75
-        customToneDisplayLabel = toneTextLabel
+        customToneDisplayField = descPill
 
-        // ── Row 2: "NAME" label + name pill + action buttons ──────────
-        let nameTag = makeFieldTag("NAME", active: false)
+        // ── Row 1: title ──────────────────────────────────────────────
+        let nameTag = makeFieldTag("TITLE", active: customToneNaming)
 
-        let namePill = UIView()
+        let namePill = CustomToneTextFieldView()
         namePill.backgroundColor = pillBg
         namePill.layer.cornerRadius = 9
         namePill.layer.borderWidth = 1.5
-        namePill.layer.borderColor = UIColor.clear.cgColor         // inactive
+        namePill.layer.borderColor = customToneNaming ? UIColor.systemBlue.cgColor : UIColor.clear.cgColor
 
-        let nameTextLabel = UILabel()
-        nameTextLabel.text = "give it a name…"
-        nameTextLabel.textColor = .placeholderText
-        nameTextLabel.font = .systemFont(ofSize: 13)
-        nameTextLabel.adjustsFontSizeToFitWidth = true
-        nameTextLabel.minimumScaleFactor = 0.75
-        customToneNameLabel = nameTextLabel
+        customToneNameField = namePill
 
-        // Tap desc pill → activate TONE field
-        let descTap = UIButton(type: .system)
-        descTap.addAction(UIAction { [weak self, weak descPill, weak namePill,
-                                      weak toneTag, weak nameTag] _ in
-            self?.customToneNaming = false
+        // Activate the tapped field and position its caret nearest the tap.
+        descPill.onCursorMove = { [weak self, weak descPill, weak namePill,
+                                   weak toneTag, weak nameTag] offset in
+            guard let self else { return }
+            self.customToneNaming = false
+            self.customToneCursorOffset = min(max(0, offset), self.customToneBuffer.count)
+            self.updateCustomToneShift()
+            self.refreshCustomToneFieldLabels(caretVisible: true)
             descPill?.layer.borderColor = UIColor.systemBlue.cgColor
             namePill?.layer.borderColor = UIColor.clear.cgColor
             toneTag?.textColor = .systemBlue
             nameTag?.textColor = .tertiaryLabel
-        }, for: .touchUpInside)
+        }
 
-        // Tap name pill → activate NAME field
-        let nameTap = UIButton(type: .system)
-        nameTap.addAction(UIAction { [weak self, weak descPill, weak namePill,
-                                      weak toneTag, weak nameTag] _ in
-            self?.customToneNaming = true
+        namePill.onCursorMove = { [weak self, weak descPill, weak namePill,
+                                   weak toneTag, weak nameTag] offset in
+            guard let self else { return }
+            self.customToneNaming = true
+            self.customToneNameCursorOffset = min(max(0, offset), self.customToneNameBuffer.count)
+            self.updateCustomToneShift()
+            self.refreshCustomToneFieldLabels(caretVisible: true)
             namePill?.layer.borderColor = UIColor.systemBlue.cgColor
             descPill?.layer.borderColor = UIColor.clear.cgColor
             nameTag?.textColor = .systemBlue
             toneTag?.textColor = .tertiaryLabel
-        }, for: .touchUpInside)
+        }
 
-        let sym  = UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-        let sym2 = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
-
-        // ✓ Apply — use once, no save
+        // Applies the tone now without adding it to the saved tone list.
         let applyBtn = UIButton(type: .system)
-        applyBtn.setImage(UIImage(systemName: "checkmark.circle.fill", withConfiguration: sym2), for: .normal)
-        applyBtn.tintColor = .systemBlue
+        styleCustomToneActionButton(
+            applyBtn,
+            title: "Use Once",
+            imageName: "play.fill",
+            color: .systemBlue
+        )
         applyBtn.addAction(UIAction { [weak self] _ in
             guard let self, !self.customToneBuffer.isEmpty else { return }
             self.applyCustomTone(save: false)
         }, for: .touchUpInside)
 
-        // 🔖 Save — persist to a slot then use
+        // Stores the tone in a reusable slot and also applies it now.
         let saveBtn = UIButton(type: .system)
-        saveBtn.setImage(UIImage(systemName: "bookmark.fill", withConfiguration: sym), for: .normal)
-        saveBtn.tintColor = .systemOrange
-        saveBtn.addAction(UIAction { [weak self, weak toneTextLabel] _ in
+        styleCustomToneActionButton(
+            saveBtn,
+            title: "Save",
+            imageName: "bookmark.fill",
+            color: .systemOrange
+        )
+        saveBtn.addAction(UIAction { [weak self, weak descPill] _ in
             guard let self, !self.customToneBuffer.isEmpty else { return }
             guard KeyboardSettings.savedTones.count < 4 else {
-                toneTextLabel?.text = "Max 4 saved — tap − on a tone to delete"
-                toneTextLabel?.textColor = .systemRed
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak toneTextLabel, weak self] in
+                descPill?.showTemporaryMessage("Max 4 saved — tap − on a tone to delete")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self, weak descPill] in
                     guard let self else { return }
-                    toneTextLabel?.text = self.customToneBuffer.isEmpty
-                        ? "describe your tone or style…" : self.customToneBuffer
-                    toneTextLabel?.textColor = self.customToneBuffer.isEmpty ? .placeholderText : .label
+                    descPill?.clearTemporaryMessage()
+                    self.refreshCustomToneFieldLabels(caretVisible: true)
                 }
                 return
             }
             self.applyCustomTone(save: true)
         }, for: .touchUpInside)
 
-        // ── Layout: pill interiors ────────────────────────────────────
-        for (label, tap, container) in [(toneTextLabel, descTap, descPill),
-                                        (nameTextLabel, nameTap, namePill)] {
-            label.translatesAutoresizingMaskIntoConstraints = false
-            tap.translatesAutoresizingMaskIntoConstraints   = false
-            container.addSubview(label)
-            container.addSubview(tap)
-            NSLayoutConstraint.activate([
-                label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
-                label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
-                label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-                tap.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                tap.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                tap.topAnchor.constraint(equalTo: container.topAnchor),
-                tap.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            ])
-        }
-
+        // ── Layout: pill tap targets ──────────────────────────────────
         // ── Layout: header ────────────────────────────────────────────
         let sep = UIView(); sep.backgroundColor = .separator
         [cancelBtn, toneTag, descPill, nameTag, namePill,
@@ -909,31 +1035,33 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             cancelBtn.widthAnchor.constraint(equalToConstant: 26),
             cancelBtn.heightAnchor.constraint(equalToConstant: 32),
 
-            // Row 1: TONE tag + description pill (full width)
-            toneTag.leadingAnchor.constraint(equalTo: cancelBtn.trailingAnchor, constant: 4),
-            toneTag.centerYAnchor.constraint(equalTo: cancelBtn.centerYAnchor),
-            toneTag.widthAnchor.constraint(equalToConstant: 38),
-            descPill.leadingAnchor.constraint(equalTo: toneTag.trailingAnchor, constant: 4),
-            descPill.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -10),
-            descPill.topAnchor.constraint(equalTo: headerView.topAnchor, constant: 10),
-            descPill.heightAnchor.constraint(equalToConstant: 32),
-
-            // Row 2: NAME tag + name pill + Apply + Save
-            nameTag.leadingAnchor.constraint(equalTo: toneTag.leadingAnchor),
-            nameTag.centerYAnchor.constraint(equalTo: namePill.centerYAnchor),
+            // Row 1: TITLE + title field
+            nameTag.leadingAnchor.constraint(equalTo: cancelBtn.trailingAnchor, constant: 4),
+            nameTag.centerYAnchor.constraint(equalTo: cancelBtn.centerYAnchor),
             nameTag.widthAnchor.constraint(equalToConstant: 38),
-            saveBtn.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -10),
-            saveBtn.topAnchor.constraint(equalTo: descPill.bottomAnchor, constant: 8),
-            saveBtn.widthAnchor.constraint(equalToConstant: 28),
-            saveBtn.heightAnchor.constraint(equalToConstant: 28),
-            applyBtn.trailingAnchor.constraint(equalTo: saveBtn.leadingAnchor, constant: -6),
-            applyBtn.topAnchor.constraint(equalTo: descPill.bottomAnchor, constant: 8),
-            applyBtn.widthAnchor.constraint(equalToConstant: 28),
-            applyBtn.heightAnchor.constraint(equalToConstant: 28),
             namePill.leadingAnchor.constraint(equalTo: nameTag.trailingAnchor, constant: 4),
             namePill.trailingAnchor.constraint(equalTo: applyBtn.leadingAnchor, constant: -6),
-            namePill.topAnchor.constraint(equalTo: descPill.bottomAnchor, constant: 8),
-            namePill.heightAnchor.constraint(equalToConstant: 28),
+            namePill.topAnchor.constraint(equalTo: headerView.topAnchor, constant: 10),
+            namePill.heightAnchor.constraint(equalToConstant: 32),
+
+            // Right-side action column: the primary one-time action sits above Save.
+            applyBtn.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -10),
+            applyBtn.topAnchor.constraint(equalTo: headerView.topAnchor, constant: 10),
+            applyBtn.widthAnchor.constraint(equalToConstant: isIPad ? 94 : 78),
+            applyBtn.heightAnchor.constraint(equalToConstant: 32),
+            saveBtn.trailingAnchor.constraint(equalTo: applyBtn.trailingAnchor),
+            saveBtn.topAnchor.constraint(equalTo: applyBtn.bottomAnchor, constant: 8),
+            saveBtn.widthAnchor.constraint(equalTo: applyBtn.widthAnchor),
+            saveBtn.heightAnchor.constraint(equalToConstant: 28),
+
+            // Row 2: TONE description
+            toneTag.leadingAnchor.constraint(equalTo: nameTag.leadingAnchor),
+            toneTag.centerYAnchor.constraint(equalTo: descPill.centerYAnchor),
+            toneTag.widthAnchor.constraint(equalToConstant: 38),
+            descPill.leadingAnchor.constraint(equalTo: toneTag.trailingAnchor, constant: 4),
+            descPill.trailingAnchor.constraint(equalTo: saveBtn.leadingAnchor, constant: -6),
+            descPill.topAnchor.constraint(equalTo: namePill.bottomAnchor, constant: 8),
+            descPill.heightAnchor.constraint(equalToConstant: 28),
 
             // Separator
             sep.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
@@ -943,29 +1071,44 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         ])
 
         keyboardStack.addArrangedSubview(headerView)
-        keyboardStack.addArrangedSubview(makeLetterFastRow("qwertyuiop"))
-        keyboardStack.addArrangedSubview(makeLetterFastRow("asdfghjkl", sideInset: 20))
-        keyboardStack.addArrangedSubview(makeThirdLetterRow())
-        keyboardStack.addArrangedSubview(makeCommandRow(modeTitle: "123"))
+        switch customToneKeyboardPage {
+        case .letters:
+            keyboardStack.addArrangedSubview(makeLetterFastRow("qwertyuiop"))
+            keyboardStack.addArrangedSubview(makeLetterFastRow("asdfghjkl", sideInset: 20))
+            keyboardStack.addArrangedSubview(makeThirdLetterRow())
+            keyboardStack.addArrangedSubview(makeCommandRow(modeTitle: "123"))
+        case .numbers:
+            keyboardStack.addArrangedSubview(makeTextRow(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]))
+            keyboardStack.addArrangedSubview(makeTextRow(["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""]))
+            keyboardStack.addArrangedSubview(makeSymbolRow(cornerTitle: "#+=") { [weak self] in
+                self?.customToneKeyboardPage = .symbols
+                self?.renderKeyboard()
+            })
+            keyboardStack.addArrangedSubview(makeCommandRow(modeTitle: "ABC"))
+        case .symbols:
+            keyboardStack.addArrangedSubview(makeTextRow(["[", "]", "{", "}", "#", "%", "^", "*", "+", "="]))
+            keyboardStack.addArrangedSubview(makeTextRow(["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•"]))
+            keyboardStack.addArrangedSubview(makeSymbolRow(cornerTitle: "123") { [weak self] in
+                self?.customToneKeyboardPage = .numbers
+                self?.renderKeyboard()
+            })
+            keyboardStack.addArrangedSubview(makeCommandRow(modeTitle: "ABC"))
+        case .emoji:
+            keyboardStack.addArrangedSubview(makeEmojiCollectionView())
+            keyboardStack.addArrangedSubview(makeEmojiTabsRow())
+        }
 
-        // Blinking cursor — placeholder is always visible; only the | blinks at the end
+        startCustomToneCursorBlinking()
+    }
+
+    private func startCustomToneCursorBlinking() {
+        customToneCursorTimer?.invalidate()
         var cursorOn = true
-        let descPlaceholder = "describe your tone or style…"
-        let namePlaceholder = "give it a name…"
+        refreshCustomToneFieldLabels(caretVisible: true)
         customToneCursorTimer = Timer.scheduledTimer(withTimeInterval: 0.53, repeats: true) { [weak self] _ in
             guard let self else { return }
             cursorOn.toggle()
-            if self.customToneNaming {
-                let t = self.customToneNameBuffer
-                let base = t.isEmpty ? namePlaceholder : t
-                self.customToneNameLabel?.text      = cursorOn ? base + "|" : base
-                self.customToneNameLabel?.textColor = t.isEmpty ? .placeholderText : .label
-            } else {
-                let t = self.customToneBuffer
-                let base = t.isEmpty ? descPlaceholder : t
-                self.customToneDisplayLabel?.text      = cursorOn ? base + "|" : base
-                self.customToneDisplayLabel?.textColor = t.isEmpty ? .placeholderText : .label
-            }
+            self.refreshCustomToneFieldLabels(caretVisible: cursorOn)
         }
     }
 
@@ -975,6 +1118,39 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         l.font = .systemFont(ofSize: 10, weight: .bold)
         l.textColor = active ? .systemBlue : .tertiaryLabel
         return l
+    }
+
+    private func styleCustomToneActionButton(
+        _ button: UIButton,
+        title: String,
+        imageName: String,
+        color: UIColor
+    ) {
+        button.setImage(UIImage(systemName: imageName,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold)), for: .normal)
+        button.setTitle(" " + title, for: .normal)
+        button.titleLabel?.font = .systemFont(ofSize: 10, weight: .semibold)
+        button.tintColor = color
+        button.setTitleColor(color, for: .normal)
+        button.backgroundColor = color.withAlphaComponent(0.12)
+        button.layer.cornerRadius = 8
+    }
+
+    private func refreshCustomToneFieldLabels(caretVisible: Bool = false) {
+        customToneNameField?.update(
+            value: customToneNameBuffer,
+            placeholder: "Give this tone a title…",
+            cursorOffset: customToneNameCursorOffset,
+            active: customToneNaming,
+            caretVisible: caretVisible
+        )
+        customToneDisplayField?.update(
+            value: customToneBuffer,
+            placeholder: "Describe the tone or style…",
+            cursorOffset: customToneCursorOffset,
+            active: !customToneNaming,
+            caretVisible: caretVisible
+        )
     }
 
     private func applyCustomTone(save: Bool) {
@@ -988,6 +1164,8 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         }
         customToneBuffer = ""
         customToneNameBuffer = ""
+        customToneCursorOffset = 0
+        customToneNameCursorOffset = 0
         aiCustomInstruction = inst
         currentTone = .custom
         aiRefinedText = ""
@@ -1105,6 +1283,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         shiftButton = shift
         addTapAction(to: shift) { [weak self] in
             guard let self else { return }
+            self.shiftSyncGeneration += 1
             let now = Date()
             if self.capsLocked {
                 self.capsLocked = false
@@ -1145,8 +1324,13 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         abc.setTitleColor(.label, for: .normal)
         abc.titleLabel?.font = .systemFont(ofSize: 15, weight: .regular)
         addTapAction(to: abc) { [weak self] in
-            self?.keyboardMode = .letters
-            self?.renderKeyboard()
+            guard let self else { return }
+            if self.keyboardMode == .customToneInput {
+                self.customToneKeyboardPage = .letters
+            } else {
+                self.keyboardMode = .letters
+            }
+            self.renderKeyboard()
         }
         row.addArrangedSubview(abc)
 
@@ -1424,92 +1608,170 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         UIDevice.current.playInputClick()
         if keyboardMode == .customToneInput {
             if customToneNaming {
-                customToneNameBuffer += text
-                customToneNameLabel?.textColor = .label
-                customToneNameLabel?.text = customToneNameBuffer
+                (customToneNameBuffer, customToneNameCursorOffset) = Self.inserting(
+                    text, into: customToneNameBuffer, at: customToneNameCursorOffset
+                )
             } else {
-                customToneBuffer += text
-                customToneDisplayLabel?.text = customToneBuffer
-                updateCustomToneShift(after: text)
+                (customToneBuffer, customToneCursorOffset) = Self.inserting(
+                    text, into: customToneBuffer, at: customToneCursorOffset
+                )
             }
+            updateCustomToneShift()
+            refreshCustomToneFieldLabels(caretVisible: true)
             return
         }
-        textDocumentProxy.insertText(text)
-        autoCapitalizeIfNeeded(after: text)
-    }
 
-    private func autoCapitalizeIfNeeded(after inserted: String) {
-        guard !capsLocked else { return }
-        if inserted.rangeOfCharacter(from: .letters) != nil {
+        let contextBeforeInsertion = textDocumentProxy.documentContextBeforeInput
+        textDocumentProxy.insertText(text)
+
+        if !capsLocked {
             lastShiftTapTime = nil
+            if let contextBeforeInsertion {
+                applyAutomaticShift(for: contextBeforeInsertion + text)
+            }
+            scheduleShiftReconciliation()
         }
-        syncShiftWithDocumentContext()
     }
 
     private func deleteUserText() {
         UIDevice.current.playInputClick()
         if keyboardMode == .customToneInput {
             if customToneNaming {
-                if !customToneNameBuffer.isEmpty { customToneNameBuffer.removeLast() }
-                customToneNameLabel?.text = customToneNameBuffer
+                (customToneNameBuffer, customToneNameCursorOffset) = Self.deletingBackward(
+                    in: customToneNameBuffer, at: customToneNameCursorOffset
+                )
             } else {
-                if !customToneBuffer.isEmpty { customToneBuffer.removeLast() }
-                customToneDisplayLabel?.text = customToneBuffer
-                updateCustomToneShift(after: nil)
+                (customToneBuffer, customToneCursorOffset) = Self.deletingBackward(
+                    in: customToneBuffer, at: customToneCursorOffset
+                )
             }
+            updateCustomToneShift()
+            refreshCustomToneFieldLabels(caretVisible: true)
             return
         }
+
+        let contextBeforeDeletion = textDocumentProxy.documentContextBeforeInput
         textDocumentProxy.deleteBackward()
-        DispatchQueue.main.async { [weak self] in
-            guard let self, !self.capsLocked else { return }
-            self.syncShiftWithDocumentContext()
+
+        guard !capsLocked else { return }
+        lastShiftTapTime = nil
+        if let contextBeforeDeletion {
+            applyAutomaticShift(for: String(contextBeforeDeletion.dropLast()))
         }
+        scheduleShiftReconciliation()
     }
 
     private func syncShiftWithDocumentContext() {
         guard !capsLocked,
               let context = textDocumentProxy.documentContextBeforeInput else { return }
 
-        let shouldShift: Bool
-        if context.isEmpty {
-            shouldShift = true
-        } else if context.last == "\n" {
-            shouldShift = true
-        } else if context.last?.isWhitespace == true {
-            let previousText = context.drop(while: { $0.isWhitespace })
-            if previousText.isEmpty {
-                shouldShift = true
-            } else {
-                let trimmed = context.trimmingCharacters(in: .whitespacesAndNewlines)
-                shouldShift = trimmed.last.map { ".!?".contains($0) } ?? true
+        applyAutomaticShift(for: context)
+    }
+
+    private func scheduleShiftReconciliation() {
+        shiftSyncGeneration += 1
+        let generation = shiftSyncGeneration
+
+        // Some host apps update UITextDocumentProxy asynchronously. The expected
+        // context above gives immediate feedback; these reads then reconcile with
+        // the host once its document state has caught up.
+        for delay in [0.04, 0.12] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self,
+                      self.shiftSyncGeneration == generation,
+                      self.keyboardMode == .letters,
+                      !self.capsLocked else { return }
+                self.syncShiftWithDocumentContext()
             }
-        } else {
-            shouldShift = false
+        }
+    }
+
+    private func applyAutomaticShift(for context: String) {
+        guard !capsLocked else { return }
+        let shouldShift = Self.shouldAutoCapitalize(
+            after: context,
+            style: textDocumentProxy.autocapitalizationType ?? .sentences
+        )
+        setShifted(shouldShift)
+    }
+
+    private static func shouldAutoCapitalize(
+        after context: String,
+        style: UITextAutocapitalizationType
+    ) -> Bool {
+        switch style {
+        case .none:
+            return false
+        case .allCharacters:
+            return true
+        case .words:
+            return context.isEmpty || context.last?.isWhitespace == true
+        case .sentences:
+            break
+        @unknown default:
+            break
         }
 
-        guard isShifted != shouldShift else {
+        guard !context.isEmpty else { return true }
+
+        // Beginning of a new line is a sentence start, including indentation.
+        if let newline = context.lastIndex(of: "\n"),
+           context[context.index(after: newline)...].allSatisfy(\.isWhitespace) {
+            return true
+        }
+
+        guard context.last?.isWhitespace == true else { return false }
+
+        var significant = context[...]
+        while significant.last?.isWhitespace == true {
+            significant = significant.dropLast()
+        }
+        guard !significant.isEmpty else { return true }
+
+        // Quotes and brackets commonly follow sentence punctuation: `Hello!\u{201D} `.
+        let sentenceClosers: Set<Character> = ["\"", "'", "\u{2019}", "\u{201D}", ")", "]", "}"]
+        while let last = significant.last, sentenceClosers.contains(last) {
+            significant = significant.dropLast()
+        }
+        return significant.last.map { ".!?".contains($0) } ?? true
+    }
+
+    private func setShifted(_ shifted: Bool) {
+        guard isShifted != shifted else {
             updateShiftAppearance()
             return
         }
-        isShifted = shouldShift
+        isShifted = shifted
         refreshLetterCasing()
         updateShiftAppearance()
     }
 
-    // Auto-capitalize for the custom tone description field.
-    // Pass the just-typed character, or nil for a deletion.
-    private func updateCustomToneShift(after typed: String?) {
+    // Auto-capitalize the keyboard-owned custom tone fields too.
+    private func updateCustomToneShift() {
         guard !capsLocked else { return }
-        let buf = customToneBuffer
-        let atSentenceStart = buf.isEmpty
-            || buf.hasSuffix(". ") || buf.hasSuffix("! ") || buf.hasSuffix("? ")
-            || buf.hasSuffix(".\n") || buf.hasSuffix("!\n") || buf.hasSuffix("?\n")
-        if atSentenceStart {
-            if !isShifted { isShifted = true; refreshLetterCasing() }
-        } else if let t = typed, t.rangeOfCharacter(from: .letters) != nil, isShifted {
-            isShifted = false
-            refreshLetterCasing()
-        }
+        let buffer = customToneNaming ? customToneNameBuffer : customToneBuffer
+        let offset = customToneNaming ? customToneNameCursorOffset : customToneCursorOffset
+        let safeOffset = min(max(0, offset), buffer.count)
+        let cursorIndex = buffer.index(buffer.startIndex, offsetBy: safeOffset)
+        setShifted(Self.shouldAutoCapitalize(after: String(buffer[..<cursorIndex]), style: .sentences))
+    }
+
+    private static func inserting(_ text: String, into value: String, at offset: Int) -> (String, Int) {
+        let safeOffset = min(max(0, offset), value.count)
+        let index = value.index(value.startIndex, offsetBy: safeOffset)
+        var result = value
+        result.insert(contentsOf: text, at: index)
+        return (result, safeOffset + text.count)
+    }
+
+    private static func deletingBackward(in value: String, at offset: Int) -> (String, Int) {
+        let safeOffset = min(max(0, offset), value.count)
+        guard safeOffset > 0 else { return (value, 0) }
+        let cursorIndex = value.index(value.startIndex, offsetBy: safeOffset)
+        let deletionIndex = value.index(before: cursorIndex)
+        var result = value
+        result.remove(at: deletionIndex)
+        return (result, safeOffset - 1)
     }
 
     private func addPressFeedback(to button: UIButton) {
@@ -1678,6 +1940,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             showStatus("Subscribe in app")
             return
         }
+        guard beginTextOperation() else { return }
         KeyboardSettings.consumeFreeUse()
         let remaining = KeyboardSettings.freeUsesRemaining
         if !KeyboardSettings.isSubscriptionActive && remaining == 0 {
@@ -1719,16 +1982,19 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     ) {
         guard !text.isEmpty else {
             showStatus("Type or select text")
+            finishTextOperation()
             return
         }
 
         showStatus("Refining...")
 
-        Task { [weak self] in
+        let requestGeneration = prepareTextOperationTask()
+        textOperationTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let refined = try await client.rewrite(text: text, mode: mode, language: outputLanguage)
                 await MainActor.run {
+                    guard self.isCurrentTextOperationTask(requestGeneration), !Task.isCancelled else { return }
                     if refined == text {
                         self.showStatus("No change")
                     } else if usingSelection {
@@ -1743,10 +2009,15 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                         )
                         self.showStatus("Inserted")
                     }
+                    self.completeTextOperationTask(requestGeneration)
                 }
             } catch {
                 await MainActor.run {
-                    self.showStatus(self.message(for: error))
+                    guard self.isCurrentTextOperationTask(requestGeneration) else { return }
+                    if !Task.isCancelled {
+                        self.showStatus(self.message(for: error))
+                    }
+                    self.completeTextOperationTask(requestGeneration)
                 }
             }
         }
@@ -1761,6 +2032,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             showTranslateStatus("Subscribe in app")
             return
         }
+        guard beginTextOperation() else { return }
         KeyboardSettings.consumeFreeUse()
         let remaining = KeyboardSettings.freeUsesRemaining
         if !KeyboardSettings.isSubscriptionActive && remaining == 0 {
@@ -1786,6 +2058,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private func startTranslation(source: String, targetLanguage: String) {
         guard !source.isEmpty else {
             showTranslateStatus("Type or select text")
+            finishTextOperation()
             return
         }
 
@@ -1794,18 +2067,25 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         bannerDismissTask?.cancel()
         translationBanner.hide(animated: false)
 
-        Task { [weak self] in
+        let requestGeneration = prepareTextOperationTask()
+        textOperationTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let translated = try await client.rewrite(text: source, mode: .translate, language: targetLanguage)
                 await MainActor.run {
+                    guard self.isCurrentTextOperationTask(requestGeneration), !Task.isCancelled else { return }
                     self.lastTranslation = translated
                     self.updateTranslateButton()
                     self.showTranslation(translated, language: targetLanguage)
+                    self.completeTextOperationTask(requestGeneration)
                 }
             } catch {
                 await MainActor.run {
-                    self.showTranslateStatus(self.message(for: error))
+                    guard self.isCurrentTextOperationTask(requestGeneration) else { return }
+                    if !Task.isCancelled {
+                        self.showTranslateStatus(self.message(for: error))
+                    }
+                    self.completeTextOperationTask(requestGeneration)
                 }
             }
         }
@@ -1859,18 +2139,24 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// Captures the complete host text field. Host apps such as WhatsApp apply proxy cursor
     /// movements on a later run-loop pass, so every move must settle before context is read.
     private func captureFullDraft(completion: @escaping (DraftSnapshot) -> Void) {
+        // Incrementing the generation invalidates every delayed callback belonging to
+        // an older capture. Only the newest capture may continue or call completion.
+        fullTextCaptureGeneration &+= 1
+        let generation = fullTextCaptureGeneration
+        isCapturingFullText = true
         let nearbyText = (textDocumentProxy.documentContextBeforeInput ?? "")
             + (textDocumentProxy.documentContextAfterInput ?? "")
 
         // Large offsets are clamped by some hosts at sentence, newline, or emoji
         // boundaries. Walk backward through each available context window instead.
-        moveToDraftStart(remainingChunks: 500, delay: 0.05) { [weak self] in
+        moveToDraftStart(remainingChunks: 500, delay: 0.05, generation: generation) { [weak self] in
             self?.collectDraftChunks(
                 collected: "",
                 nearbyText: nearbyText,
                 remainingChunks: 500,
                 readRetries: 3,
                 delay: 0.05,
+                generation: generation,
                 completion: completion
             )
         }
@@ -1879,10 +2165,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private func moveToDraftStart(
         remainingChunks: Int,
         delay: TimeInterval,
+        generation: Int,
         completion: @escaping () -> Void
     ) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { return }
+            guard let self, self.isCurrentCapture(generation) else { return }
 
             let chunkBeforeCursor = self.textDocumentProxy.documentContextBeforeInput ?? ""
             guard remainingChunks > 0 else {
@@ -1893,6 +2180,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             guard !chunkBeforeCursor.isEmpty else {
                 self.probePastDraftBoundary(
                     remainingChunks: remainingChunks,
+                    generation: generation,
                     completion: completion
                 )
                 return
@@ -1904,6 +2192,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             self.moveToDraftStart(
                 remainingChunks: remainingChunks - 1,
                 delay: 0.05,
+                generation: generation,
                 completion: completion
             )
         }
@@ -1914,13 +2203,14 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     /// boundary and should keep scanning.
     private func probePastDraftBoundary(
         remainingChunks: Int,
+        generation: Int,
         completion: @escaping () -> Void
     ) {
         let afterBeforeProbe = textDocumentProxy.documentContextAfterInput ?? ""
         textDocumentProxy.adjustTextPosition(byCharacterOffset: -1)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-            guard let self else { return }
+            guard let self, self.isCurrentCapture(generation) else { return }
             let afterProbe = self.textDocumentProxy.documentContextAfterInput ?? ""
             guard afterProbe != afterBeforeProbe else {
                 completion()
@@ -1930,6 +2220,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             self.moveToDraftStart(
                 remainingChunks: remainingChunks - 1,
                 delay: 0.05,
+                generation: generation,
                 completion: completion
             )
         }
@@ -1941,10 +2232,11 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         remainingChunks: Int,
         readRetries: Int,
         delay: TimeInterval,
+        generation: Int,
         completion: @escaping (DraftSnapshot) -> Void
     ) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { return }
+            guard let self, self.isCurrentCapture(generation) else { return }
 
             let chunk = self.textDocumentProxy.documentContextAfterInput ?? ""
             if !chunk.isEmpty && remainingChunks > 0 {
@@ -1956,6 +2248,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                     remainingChunks: remainingChunks - 1,
                     readRetries: readRetries,
                     delay: 0.05,
+                    generation: generation,
                     completion: completion
                 )
                 return
@@ -1969,6 +2262,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                     remainingChunks: remainingChunks,
                     readRetries: readRetries - 1,
                     delay: 0.08,
+                    generation: generation,
                     completion: completion
                 )
                 return
@@ -1978,6 +2272,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                 self.finishDraftCapture(
                     collected: collected,
                     nearbyText: nearbyText,
+                    generation: generation,
                     completion: completion
                 )
                 return
@@ -1987,6 +2282,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                 collected: collected,
                 nearbyText: nearbyText,
                 remainingChunks: remainingChunks,
+                generation: generation,
                 completion: completion
             )
         }
@@ -1996,19 +2292,21 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         collected: String,
         nearbyText: String,
         remainingChunks: Int,
+        generation: Int,
         completion: @escaping (DraftSnapshot) -> Void
     ) {
         let beforeProbe = textDocumentProxy.documentContextBeforeInput ?? ""
         textDocumentProxy.adjustTextPosition(byCharacterOffset: 1)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-            guard let self else { return }
+            guard let self, self.isCurrentCapture(generation) else { return }
             let afterProbe = self.textDocumentProxy.documentContextBeforeInput ?? ""
 
             guard afterProbe != beforeProbe, let crossedCharacter = afterProbe.last else {
                 self.finishDraftCapture(
                     collected: collected,
                     nearbyText: nearbyText,
+                    generation: generation,
                     completion: completion
                 )
                 return
@@ -2020,6 +2318,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
                 remainingChunks: remainingChunks - 1,
                 readRetries: 0,
                 delay: 0.05,
+                generation: generation,
                 completion: completion
             )
         }
@@ -2028,11 +2327,18 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private func finishDraftCapture(
         collected: String,
         nearbyText: String,
+        generation: Int,
         completion: (DraftSnapshot) -> Void
     ) {
+        guard isCurrentCapture(generation) else { return }
+        isCapturingFullText = false
         let raw = collected.count >= nearbyText.count ? collected : nearbyText
         // Forward scanning naturally leaves the cursor at the true end.
         completion((raw, raw.trimmingCharacters(in: .whitespacesAndNewlines)))
+    }
+
+    private func isCurrentCapture(_ generation: Int) -> Bool {
+        isCapturingFullText && generation == fullTextCaptureGeneration
     }
 
     private func replaceCurrentDraft(contextBeforeInput: String, contextAfterInput: String, refined: String) {
@@ -2045,6 +2351,182 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             textDocumentProxy.deleteBackward()
         }
         textDocumentProxy.insertText(refined)
+    }
+}
+
+
+// A lightweight keyboard-owned text field with a real movable caret. The
+// placeholder remains a normal, stable label while only the caret view blinks.
+private final class CustomToneTextFieldView: UIView {
+    var onCursorMove: ((Int) -> Void)?
+
+    private let textLabel = UILabel()
+    private let scrollView = UIScrollView()
+    private let contentView = UIView()
+    private let caretView = UIView()
+    private var contentWidthConstraint: NSLayoutConstraint!
+    private var textWidthConstraint: NSLayoutConstraint!
+    private var textLeadingConstraint: NSLayoutConstraint!
+    private var caretLeadingConstraint: NSLayoutConstraint!
+    private var currentValue = ""
+    private var lastValue = ""
+    private var lastPlaceholder = ""
+    private var lastCursorOffset = -1
+    private var lastActive = false
+    private var hasTemporaryMessage = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+
+        clipsToBounds = true
+        scrollView.isUserInteractionEnabled = false
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(scrollView)
+
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(contentView)
+
+        textLabel.font = .systemFont(ofSize: 13)
+        textLabel.numberOfLines = 1
+        textLabel.lineBreakMode = .byClipping
+        textLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(textLabel)
+
+        caretView.backgroundColor = .systemBlue
+        caretView.layer.cornerRadius = 0.75
+        caretView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(caretView)
+
+        contentWidthConstraint = contentView.widthAnchor.constraint(equalToConstant: 1)
+        textWidthConstraint = textLabel.widthAnchor.constraint(equalToConstant: 1)
+        textLeadingConstraint = textLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor)
+        caretLeadingConstraint = caretView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor)
+
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            scrollView.topAnchor.constraint(equalTo: topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            contentView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            contentView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            contentView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            contentView.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor),
+            contentWidthConstraint,
+            textLeadingConstraint,
+            textLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            textWidthConstraint,
+            caretLeadingConstraint,
+            caretView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            caretView.widthAnchor.constraint(equalToConstant: 1.5),
+            caretView.heightAnchor.constraint(equalToConstant: 17),
+        ])
+
+        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(fieldTapped(_:))))
+        let caretDrag = UILongPressGestureRecognizer(target: self, action: #selector(fieldLongPressed(_:)))
+        caretDrag.minimumPressDuration = 0.25
+        caretDrag.allowableMovement = .greatestFiniteMagnitude
+        addGestureRecognizer(caretDrag)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(
+        value: String,
+        placeholder: String,
+        cursorOffset: Int,
+        active: Bool,
+        caretVisible: Bool
+    ) {
+        currentValue = value
+        let safeOffset = min(max(0, cursorOffset), value.count)
+        if hasTemporaryMessage {
+            caretView.isHidden = true
+            return
+        }
+        let contentChanged = value != lastValue || placeholder != lastPlaceholder
+        let positionChanged = safeOffset != lastCursorOffset
+        let activeFieldChanged = active != lastActive
+
+        if contentChanged {
+            textLabel.text = value.isEmpty ? placeholder : value
+            textLabel.textColor = value.isEmpty ? .placeholderText : .label
+            textWidthConstraint.constant = max(1, ceil(textLabel.intrinsicContentSize.width))
+        }
+
+        let prefix = String(value.prefix(safeOffset))
+        let caretX = value.isEmpty ? 0 : textWidth(of: prefix)
+        textLeadingConstraint.constant = value.isEmpty ? 2 : 0
+        caretLeadingConstraint.constant = caretX
+        contentWidthConstraint.constant = max(
+            textLeadingConstraint.constant + textWidthConstraint.constant,
+            caretX + 1.5
+        )
+        caretView.isHidden = !active
+        caretView.alpha = active && caretVisible ? 1 : 0
+
+        lastValue = value
+        lastPlaceholder = placeholder
+        lastCursorOffset = safeOffset
+        lastActive = active
+        guard contentChanged || positionChanged || activeFieldChanged else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.layoutIfNeeded()
+            let caretRect = self.caretView.convert(self.caretView.bounds, to: self.scrollView)
+                .insetBy(dx: -5, dy: 0)
+            self.scrollView.scrollRectToVisible(caretRect, animated: false)
+        }
+    }
+
+    func showTemporaryMessage(_ message: String) {
+        hasTemporaryMessage = true
+        textLabel.text = message
+        textLabel.textColor = .systemRed
+        textWidthConstraint.constant = max(1, ceil(textLabel.intrinsicContentSize.width))
+        contentWidthConstraint.constant = textLeadingConstraint.constant + textWidthConstraint.constant
+    }
+
+    func clearTemporaryMessage() {
+        hasTemporaryMessage = false
+        lastValue = "\u{0}"
+    }
+
+    @objc private func fieldTapped(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        moveCaret(to: gesture.location(in: scrollView))
+    }
+
+    @objc private func fieldLongPressed(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began || gesture.state == .changed else { return }
+        moveCaret(to: gesture.location(in: scrollView))
+    }
+
+    private func moveCaret(to location: CGPoint) {
+        guard !currentValue.isEmpty else {
+            onCursorMove?(0)
+            return
+        }
+
+        let tappedX = max(0, location.x + scrollView.contentOffset.x - textLeadingConstraint.constant)
+        var usedWidth: CGFloat = 0
+        for (offset, character) in currentValue.enumerated() {
+            let characterWidth = textWidth(of: String(character))
+            if tappedX < usedWidth + characterWidth / 2 {
+                onCursorMove?(offset)
+                return
+            }
+            usedWidth += characterWidth
+        }
+        onCursorMove?(currentValue.count)
+    }
+
+    private func textWidth(of text: String) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: textLabel.font as Any]).width)
     }
 }
 

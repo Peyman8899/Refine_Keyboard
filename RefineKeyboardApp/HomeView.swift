@@ -3,9 +3,13 @@ import SwiftUI
 struct HomeView: View {
     @Environment(SubscriptionStore.self) private var store
     @State private var showPaywall = false
+#if DEBUG
     @State private var showDeveloperSettings = false
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var endpointOverride: String = AppSettings.sharedDefaults.string(forKey: AppSettings.endpointKey) ?? ""
+    @State private var appSecretOverride: String = AppSettings.sharedDefaults.string(forKey: AppSettings.appSecretKey) ?? ""
+    @State private var developerSettingsMessage: String?
+#endif
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     var body: some View {
         NavigationStack {
@@ -14,7 +18,9 @@ struct HomeView: View {
                 setupSection
                 featuresSection
                 settingsSection
+#if DEBUG
                 developerSection
+#endif
             }
             .navigationTitle("RefineKeyboard")
             .sheet(isPresented: $showPaywall) {
@@ -127,42 +133,72 @@ struct HomeView: View {
                 Label("Privacy Policy", systemImage: "hand.raised.fill")
             }
 
+#if DEBUG
             Button {
                 showDeveloperSettings.toggle()
             } label: {
                 Label("Developer Settings", systemImage: "hammer.fill")
             }
             .foregroundStyle(.secondary)
+#endif
         }
     }
 
+#if DEBUG
     @ViewBuilder
     private var developerSection: some View {
         if showDeveloperSettings {
             Section {
-                TextField(AppSettings.productionEndpoint, text: $endpointOverride)
+                TextField(AppSettings.defaultEndpoint, text: $endpointOverride)
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
                     .autocorrectionDisabled()
                     .font(.caption.monospaced())
 
+                SecureField("Staging app secret", text: $appSecretOverride)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.caption.monospaced())
+
                 HStack {
                     Button("Save") {
+                        let endpoint = endpointOverride.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let secret = appSecretOverride.trimmingCharacters(in: .whitespacesAndNewlines)
                         AppSettings.sharedDefaults.set(
-                            endpointOverride.trimmingCharacters(in: .whitespacesAndNewlines),
+                            endpoint,
                             forKey: AppSettings.endpointKey
                         )
+                        AppSettings.sharedDefaults.set(
+                            secret,
+                            forKey: AppSettings.appSecretKey
+                        )
+                        endpointOverride = endpoint
+                        appSecretOverride = secret
+                        developerSettingsMessage = "Saved for Debug builds"
                     }
+                    .buttonStyle(.borderedProminent)
+
                     Spacer()
+
                     Button("Reset", role: .destructive) {
                         endpointOverride = ""
+                        appSecretOverride = ""
                         AppSettings.sharedDefaults.removeObject(forKey: AppSettings.endpointKey)
+                        AppSettings.sharedDefaults.removeObject(forKey: AppSettings.appSecretKey)
+                        developerSettingsMessage = "Reset to staging defaults"
                     }
+                    .buttonStyle(.bordered)
+                }
+
+                if let developerSettingsMessage {
+                    Label(developerSettingsMessage, systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
                 }
             } header: {
                 Text("API Endpoint Override")
             } footer: {
-                Text("Leave blank to use the production endpoint.")
+                Text("Debug builds use staging by default. Enter the staging REFINE_APP_SECRET here; Release builds always use production.")
             }
 
             Section {
@@ -179,6 +215,7 @@ struct HomeView: View {
             }
         }
     }
+#endif
 }
 
 // MARK: - Supporting Views
