@@ -58,6 +58,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
     private var customToneNameBuffer = ""
     private var customToneCursorOffset = 0
     private var customToneNameCursorOffset = 0
+    private var customToneEditingIndex: Int?
     private var customToneNaming = false
     private var customToneKeyboardPage: CustomToneKeyboardPage = .letters
     private weak var customToneDisplayField: CustomToneTextFieldView?
@@ -788,7 +789,20 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             self.customToneNameBuffer = ""
             self.customToneCursorOffset = 0
             self.customToneNameCursorOffset = 0
+            self.customToneEditingIndex = nil
             self.customToneNaming = true
+            self.customToneKeyboardPage = .letters
+            self.keyboardMode = .customToneInput
+            self.renderKeyboard()
+        }
+        reviewView.onSavedToneEdit = { [weak self] index, tone in
+            guard let self else { return }
+            self.customToneBuffer = tone.instruction
+            self.customToneNameBuffer = tone.name
+            self.customToneCursorOffset = tone.instruction.count
+            self.customToneNameCursorOffset = tone.name.count
+            self.customToneEditingIndex = index
+            self.customToneNaming = false
             self.customToneKeyboardPage = .letters
             self.keyboardMode = .customToneInput
             self.renderKeyboard()
@@ -932,6 +946,7 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
             self?.customToneNameBuffer = ""
             self?.customToneCursorOffset = 0
             self?.customToneNameCursorOffset = 0
+            self?.customToneEditingIndex = nil
             self?.keyboardMode = .aiReview
             self?.renderKeyboard()
         }, for: .touchUpInside)
@@ -1002,13 +1017,13 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         let saveBtn = UIButton(type: .system)
         styleCustomToneActionButton(
             saveBtn,
-            title: "Save",
+            title: customToneEditingIndex == nil ? "Save" : "Update",
             imageName: "bookmark.fill",
             color: .systemOrange
         )
         saveBtn.addAction(UIAction { [weak self, weak descPill] _ in
             guard let self, !self.customToneBuffer.isEmpty else { return }
-            guard KeyboardSettings.savedTones.count < 4 else {
+            guard self.customToneEditingIndex != nil || KeyboardSettings.savedTones.count < 4 else {
                 descPill?.showTemporaryMessage("Max 4 saved — tap − on a tone to delete")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self, weak descPill] in
                     guard let self else { return }
@@ -1158,14 +1173,21 @@ final class KeyboardViewController: UIInputViewController, UIInputViewAudioFeedb
         if save {
             var tones = KeyboardSettings.savedTones
             let raw = customToneNameBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-            let name = raw.isEmpty ? "Custom \(tones.count + 1)" : raw
-            tones.append(SavedTone(name: name, instruction: inst))
+            let fallbackNumber = customToneEditingIndex.map { $0 + 1 } ?? (tones.count + 1)
+            let name = raw.isEmpty ? "Custom \(fallbackNumber)" : raw
+            let updatedTone = SavedTone(name: name, instruction: inst)
+            if let index = customToneEditingIndex, tones.indices.contains(index) {
+                tones[index] = updatedTone
+            } else {
+                tones.append(updatedTone)
+            }
             KeyboardSettings.savedTones = tones
         }
         customToneBuffer = ""
         customToneNameBuffer = ""
         customToneCursorOffset = 0
         customToneNameCursorOffset = 0
+        customToneEditingIndex = nil
         aiCustomInstruction = inst
         currentTone = .custom
         aiRefinedText = ""
@@ -2811,6 +2833,11 @@ extension KeyboardViewController: AVAudioPlayerDelegate, UICollectionViewDataSou
     }
 }
 
+private final class SavedToneTapButton: UIButton {
+    var savedTone: SavedTone?
+    var savedToneIndex: Int?
+}
+
 final class AIReviewView: UIView {
     var onToneChange:        ((RewriteMode, String) -> Void)?
     var onInsert:            (() -> Void)?
@@ -2819,6 +2846,7 @@ final class AIReviewView: UIView {
     var onBack:              (() -> Void)?
     var onCustomToneOpen:    (() -> Void)?
     var onSavedToneSelected: ((String) -> Void)?
+    var onSavedToneEdit:     ((Int, SavedTone) -> Void)?
 
     var currentTone: RewriteMode = .polish { didSet { updateToneButtons() } }
     var toneHighlightEnabled: Bool = true { didSet { updateToneButtons() } }
@@ -3148,12 +3176,23 @@ final class AIReviewView: UIView {
                     self?.reloadSavedTones()
                 }, for: .touchUpInside)
 
-                let tapBtn = UIButton(type: .system)
+                let tapBtn = SavedToneTapButton(type: .system)
                 tapBtn.translatesAutoresizingMaskIntoConstraints = false
                 let inst = tone.instruction
+                tapBtn.savedTone = tone
+                tapBtn.savedToneIndex = slot
+                tapBtn.accessibilityLabel = tone.name
+                tapBtn.accessibilityHint = "Double tap to use. Touch and hold to edit."
                 tapBtn.addAction(UIAction { [weak self] _ in
                     self?.onSavedToneSelected?(inst)
                 }, for: .touchUpInside)
+                let longPress = UILongPressGestureRecognizer(
+                    target: self,
+                    action: #selector(handleSavedToneLongPress(_:))
+                )
+                longPress.minimumPressDuration = 0.45
+                longPress.cancelsTouchesInView = true
+                tapBtn.addGestureRecognizer(longPress)
 
                 nameLabel.textAlignment = .center
 
@@ -3209,6 +3248,14 @@ final class AIReviewView: UIView {
     }
 
     // MARK: - Private helpers
+
+    @objc private func handleSavedToneLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began,
+              let button = gesture.view as? SavedToneTapButton,
+              let tone = button.savedTone,
+              let index = button.savedToneIndex else { return }
+        onSavedToneEdit?(index, tone)
+    }
 
     private static func toneEmojiImage(named name: String) -> UIImage? {
         guard let url = Bundle(for: AIReviewView.self).url(
